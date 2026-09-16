@@ -14,6 +14,10 @@ bash install.sh --all --token hf_xxx
 
 1 Gbit hatta yaklaşık 50-70 dakika. Adım adım anlatım: **[SETUP.md](SETUP.md)**
 
+Bunu tek kişilik asistan olarak değil, şirketin işlerini yürüten ajan altyapısı olarak
+kuracaksan: **[docs/MIMARI.md](docs/MIMARI.md)** — ajan rolleri, ajan başına anahtar ve
+bütçe, yalıtım seviyeleri, tek makinenin eşzamanlılık tavanı.
+
 ---
 
 ## Katmanlar
