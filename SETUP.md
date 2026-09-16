@@ -180,13 +180,20 @@ kendi kurallarınla değiştirmen beklenir. **Varsa üzerine yazılmaz** — `--
 ~/vault/kurallar/yazim-kurallari.md      doküman, yorum, rapor yazarken
 ```
 
-Roller `~/.claude/agents/` altına kurulur: `spark-kod`, `spark-test`, `spark-denetci`. Claude
-Code bir iş çok adımlıysa bunlara devreder; her rol işe başlamadan önce ilgili kural dosyasını
-okur.
+Roller iki yere birden kurulur, tek kaynaktan:
 
-Agent Canvas kabındaki ajan bu rolleri görmez. Onu aynı sözleşmeye bağlayan şey
-`~/projects/AGENTS.md` dosyasıdır; kurulum onu da koyar ve kap `/vault` üzerinden aynı kural
-dosyalarına bakar.
+| Nereye | Kim okur | Model adı |
+|---|---|---|
+| `~/.claude/agents/` | host'taki Claude Code | `opus`, `sonnet` |
+| `/srv/ai/data/canvas/agents/` | Agent Canvas (kapta `~/.openhands/agents/`) | `litellm_proxy/opus` |
+
+Canvas her konuşma başlarken bu dizini kendiliğinden tarar; ayrıca bir kayıt adımı yok.
+
+**Canvas'ta bir ayarı elle açman gerekir:** Settings → Agent → **Sub-agents**. Varsayılanı
+kapalıdır; açılmazsa yönlendiren ajanın devir aracı yüklenmez ve roller görev alamaz.
+`spark canvas` bunu ve kurulu rolleri listeler.
+
+`~/projects/AGENTS.md` insanın okuması için konur; Canvas onu otomatik okumaz.
 
 Kuralı değiştirmek için dosyayı doğrudan aç. Tek kaynak olduğu için, kaydettiğin an bütün
 ajanlar yeni kurala bağlanır; yeniden kurulum gerekmez.

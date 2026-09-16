@@ -258,16 +258,23 @@ eskimez. Bir kuralı vault'ta değiştirdiğinde bütün ajanlar o an yeni kural
 | `spark-test` | test yazar ve **çalıştırır** | kodu düzeltmez, geri devreder |
 | `spark-denetci` | denetler, PR açıklaması hazırlar | kod yazmaz, **birleştirmez** |
 
-Roller host'taki Claude Code'un mekanizmasıdır (`~/.claude/agents/`). Agent Canvas kabındaki
-ajanı aynı sözleşmeye bağlayan şey proje kökündeki `AGENTS.md` dosyasıdır; kurulum onu da
-`~/projects/AGENTS.md` olarak koyar. İki taraf farklı mekanizmayla aynı kurallara varır.
+**Aynı roller iki tarafta da çalışır.** Kurulum tek kaynaktan iki sürüm üretir: host'taki
+Claude Code için `~/.claude/agents/`, Agent Canvas için `/srv/ai/data/canvas/agents/` (kabın
+içinde `~/.openhands/agents/`). Canvas her konuşma başlarken bu dizini kendiliğinden tarayıp
+rolleri devir kaydına yazar, yani `spark-kod`'a görev verilebilir. İki sürüm arasındaki tek
+fark iki alan: kural yolu (`~/vault` / `/vault`) ve model adı (`opus` / `litellm_proxy/opus`).
+
+**Canvas'ta bir ayarı elle açman gerekiyor:** Settings → Agent → **Sub-agents**. Varsayılanı
+kapalıdır ve açılmazsa yönlendiren ajan rollere görev veremez. `spark canvas` bunu ve kurulu
+rolleri listeler.
 
 Kuralları düzenlemek için dosyaları doğrudan aç, ya da `wiki` komutuyla bilgi tabanında çalış.
 
-Dürüst sınır: roller arasındaki devir bir protokol değil, yönlendirmedir. Yönlendiren ajan işi
-böler ve sırayla çağırır; roller birbirini doğrudan çağırmaz. Tek makinede yeterli çalışır,
-ayrı makinelerdeki ajanların birbirini bulması için gereken ajan-ajan protokolü bu mimaride
-henüz yok. Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
+İki dürüst sınır. Proje kökündeki `AGENTS.md` insan içindir; Canvas onu **otomatik okumaz**
+(kaynak kodda yalnızca dosya listesi sıralamasında geçiyor), sözleşmeyi taşıyan şey rol
+dosyalarının kendisidir. İkincisi, roller arasındaki devir **A2A değildir**: OpenHands
+deposunda `a2a` araması sıfır sonuç veriyor, NemoClaw'da da yok. Devir tek makinede, tek
+konuşma içinde, SDK'nın kendi devir kaydı üzerinden olur. Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
 
 ---
 

@@ -688,24 +688,45 @@ if [[ -d "$SRC_DIR/roller" ]]; then
     > "$HOME/.claude/skills/sirket-kurallari/SKILL.md"
   ok "skill: sirket-kurallari → $KURALLAR"
 
-  # Roller: yazan, test eden ve denetleyen ayrı ajanlar
+  # ── Roller: aynı kaynak, iki hedef ──────────────────────────────────────
+  #  Host'taki Claude Code ile Agent Canvas rolleri aynı Markdown biçimini
+  #  okuyor (frontmatter + gövde = sistem istemi). Ayrışan tek şey iki alan:
+  #  kural yolu (host'ta ~/vault, kapta /vault) ve model adı (kapıda katman adı,
+  #  Canvas'ta litellm_proxy/<katman>). O yüzden tek dosyadan iki sürüm üretiyoruz.
   mkdir -p "$HOME/.claude/agents"
+  CANVAS_AGENTS="$DATA/canvas/agents"
+  mkdir -p "$CANVAS_AGENTS"
   ROL=0
   for f in "$SRC_DIR/roller/agents/"*.md; do
     [[ -e "$f" ]] || continue
-    sed "s|__KURALLAR__|$KURALLAR|g" "$f" > "$HOME/.claude/agents/$(basename "$f")"
+    # host: Claude Code katman adını doğrudan kullanır
+    sed -e "s|__KURALLAR__|$KURALLAR|g" \
+        -e "s|__MODEL_OPUS__|opus|g" -e "s|__MODEL_SONNET__|sonnet|g" \
+        "$f" > "$HOME/.claude/agents/$(basename "$f")"
+    # canvas: kapı üstünden litellm_proxy öneki, kural yolu kabın içindeki bağlama
+    sed -e "s|__KURALLAR__|/vault/kurallar|g" \
+        -e "s|__MODEL_OPUS__|litellm_proxy/opus|g" \
+        -e "s|__MODEL_SONNET__|litellm_proxy/sonnet|g" \
+        "$f" > "$CANVAS_AGENTS/$(basename "$f")"
     ROL=$((ROL+1))
   done
-  ok "$ROL rol kuruldu: spark-kod · spark-test · spark-denetci"
+  ok "$ROL rol kuruldu — host: ~/.claude/agents · Canvas: $CANVAS_AGENTS"
+  log "   Canvas her konuşmada bu dizini kendiliğinden tarar (~/.openhands/agents)"
 
-  # Proje sözleşmesi: çalışma dizinindeki AGENTS.md'yi her iki taraf da okur
+  # Kural skill'i Canvas tarafında da dursun (yönlendiren ajan için)
+  CSK="$DATA/canvas/skills/installed/sirket-kurallari"
+  mkdir -p "$CSK"
+  sed "s|__KURALLAR__|/vault/kurallar|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
+  ok "kural skill'i Canvas tarafına da yazıldı"
+
+  # Proje notu: insan için sözleşme özeti (Canvas bunu OTOMATİK OKUMAZ)
   PROJ="${CANVAS_PROJECTS:-$HOME/projects}"
   mkdir -p "$PROJ"
   if [[ -f "$PROJ/AGENTS.md" ]]; then
     log "AGENTS.md zaten var, dokunulmadı: $PROJ/AGENTS.md"
   else
     cp "$SRC_DIR/roller/AGENTS.md" "$PROJ/AGENTS.md"
-    ok "proje sözleşmesi: $PROJ/AGENTS.md"
+    ok "proje notu: $PROJ/AGENTS.md"
   fi
 else
   warn "roller/ klasörü bulunamadı — kurallar ve roller kurulmadı"

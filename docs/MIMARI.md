@@ -109,16 +109,33 @@ tamamını okur, bulgularını engelleyici / düzeltilmeli / öneri diye ayırı
 hazırlar ve orada durur — birleştirme kararı insanındır. Bu ayrım bir üslup tercihi değil:
 kodu yazan, kendi varsayımını doğrulamaya eğilimlidir.
 
-**Bağlanma noktası: çalışma dizinindeki `AGENTS.md`.** Roller host'taki Claude Code'un
-mekanizmasıdır. Canvas kabındaki ajan onları görmez; onu bağlayan şey proje kökündeki
-`AGENTS.md` dosyasıdır ve o dosya aynı vault yollarını, aynı iş bölümünü, aynı model
-seçimini anlatır. Böylece iki taraf farklı mekanizmalarla aynı sözleşmeye varır.
+**Roller iki çalışma zamanında da tanınır.** Mekanizma tesadüf değil: Claude Code'un alt ajan
+dosyaları ile OpenHands SDK'sının `AgentDefinition` dosyaları aynı biçimi kullanıyor —
+YAML frontmatter artı gövde, gövde sistem istemi oluyor. Kurulum tek kaynaktan iki sürüm
+üretir ve yalnızca iki alanı değiştirir: kural yolu (`~/vault/kurallar` ya da `/vault/kurallar`)
+ve model adı (`opus` ya da `litellm_proxy/opus`). Host sürümü `~/.claude/agents/` altına,
+Canvas sürümü kabın `~/.openhands/agents/` dizinine gider; bizde o dizin kalıcı bind mount
+olduğu için `/srv/ai/data/canvas/agents/` demektir.
 
-Bugünkü sınır şudur: **rollerin arasındaki devir protokol değil, yönlendirmedir.** Yönlendiren
-ajan işi böler ve sırayla çağırır; roller birbirini doğrudan çağırmaz, aralarında bir mesaj
-kuyruğu ya da ajan kaydı yoktur. Tek makinede ve tek konuşma içinde bu yeterli çalışır.
-Ajanların ayrı süreçlerde, ayrı makinelerde birbirini bulması gerektiğinde asıl gereken şey
-bir ajan-ajan protokolüdür; o da bu mimaride henüz yok.
+Canvas tarafında bunu çalışır kılan şey SDK'nın konuşma kurulumunda dosya tabanlı ajanları
+kendiliğinden kaydetmesidir; proje düzeyi önce, kullanıcı düzeyi sonra taranır. Yani rol
+dosyasını oraya koymak yeterli, ayrıca bir kayıt adımı yok.
+
+**Elle açılması gereken tek anahtar var:** Agent Canvas profilinde `enable_sub_agents`
+varsayılan olarak kapalıdır. Kapalıyken yönlendiren ajanın devir aracı hiç yüklenmez ve roller
+tanınsa bile görev alamaz. Settings → Agent → Sub-agents açılmadan bu akış çalışmaz;
+`spark canvas` çıktısı bunu hatırlatır.
+
+### Neyin olmadığını da yazalım
+
+**A2A yok.** OpenHands deposunda `a2a` araması sıfır sonuç veriyor; NemoClaw'da da yok. Devir,
+standart bir ajan-ajan protokolü üzerinden değil, SDK'nın kendi devir kaydı üzerinden ve tek
+süreç içinde olur. Ajanların ayrı makinelerde birbirini bulması gerektiğinde gereken şey
+budur ve bu mimaride bulunmuyor.
+
+**Proje kökündeki `AGENTS.md` otomatik okunmuyor.** Kaynak kodda o ad yalnızca dosya
+listesinin sıralama önceliğinde geçiyor, yani arayüz meselesi. Sözleşmeyi taşıyan şey rol
+dosyalarının gövdesi ve kural skill'idir; `AGENTS.md` insanın okuması için duruyor.
 
 ---
 
