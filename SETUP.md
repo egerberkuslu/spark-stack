@@ -189,9 +189,12 @@ Roller iki yere birden kurulur, tek kaynaktan:
 
 Canvas her konuşma başlarken bu dizini kendiliğinden tarar; ayrıca bir kayıt adımı yok.
 
-**Canvas'ta bir ayarı elle açman gerekir:** Settings → Agent → **Sub-agents**. Varsayılanı
-kapalıdır; açılmazsa yönlendiren ajanın devir aracı yüklenmez ve roller görev alamaz.
-`spark canvas` bunu ve kurulu rolleri listeler.
+Kurulum, Canvas ayağa kalkınca ayar API'sinden iki şeyi tohumlar ve geri okuyup doğrular:
+alt ajan devrini açar (`enable_sub_agents` — varsayılanı kapalı, kapalıyken devir aracı
+yüklenmiyor) ve modeli `litellm_proxy/opus` olarak yerel kapıya bağlar. Tohumlama başarısız
+olursa uyarır; o zaman panelden Settings → Agent → Sub-agents ve Settings → LLM elle yapılır.
+
+`spark canvas` bu ayarları canlı okur, kurulu rolleri modelleriyle listeler.
 
 `~/projects/AGENTS.md` insanın okuması için konur; Canvas onu otomatik okumaz.
 

@@ -121,10 +121,13 @@ Canvas tarafında bunu çalışır kılan şey SDK'nın konuşma kurulumunda dos
 kendiliğinden kaydetmesidir; proje düzeyi önce, kullanıcı düzeyi sonra taranır. Yani rol
 dosyasını oraya koymak yeterli, ayrıca bir kayıt adımı yok.
 
-**Elle açılması gereken tek anahtar var:** Agent Canvas profilinde `enable_sub_agents`
-varsayılan olarak kapalıdır. Kapalıyken yönlendiren ajanın devir aracı hiç yüklenmez ve roller
-tanınsa bile görev alamaz. Settings → Agent → Sub-agents açılmadan bu akış çalışmaz;
-`spark canvas` çıktısı bunu hatırlatır.
+**Bir anahtar var ve kurulum onu kendi açıyor.** Agent Canvas profilinde `enable_sub_agents`
+varsayılan olarak kapalıdır; kapalıyken yönlendiren ajanın devir aracı hiç yüklenmez ve roller
+tanınsa bile görev alamaz. Kurulum, Canvas ayağa kalkar kalkmaz
+`PATCH /api/settings` ile `agent_settings_diff.enable_sub_agents` değerini açar ve aynı çağrıda
+modeli kapıya bağlar. Yazdım demekle yetinmez: ayarı geri okur ve gerçekten `true` olduğunu
+doğrular, olmazsa uyarıp elle yapılacak adımı yazar. `spark canvas` da bu değeri her çağrıda
+canlı okur.
 
 ### Neyin olmadığını da yazalım
 

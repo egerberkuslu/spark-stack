@@ -142,9 +142,19 @@ case "${1:-status}" in
     printf '    Model     litellm_proxy/%s\n' "${CANVAS_MODEL:-opus}"
     printf '    Base URL  http://litellm:4000\n'
     printf '    API Key   %s\n' "${LITELLM_KEY:-sk-spark}"
-    printf '\n  %sSettings → Agent%s\n' "$B" "$R"
-    printf '    Sub-agents      %sAÇIK olmalı%s — varsayılanı kapalı, açmadan roller devreye girmez\n' "$B" "$R"
-    printf '    Preset          Claude Code %s(isteğe bağlı; kap zaten yerel kapıya bakıyor)%s\n' "$D" "$R"
+    # Ayarı anlatmak yerine canlı okuyoruz; kurulum zaten tohumluyor.
+    CS="$(curl -sf --max-time 10 "http://127.0.0.1:$CP/api/settings" \
+          -H "X-Session-API-Key: ${CANVAS_KEY:-}" 2>/dev/null)"
+    SUB="$(echo "$CS" | jq -r '[(.. | objects | select(has("enable_sub_agents")) | .enable_sub_agents)] | first // "?"' 2>/dev/null)"
+    MDL="$(echo "$CS" | jq -r '[(.. | objects | select(has("model")) | .model)] | first // "?"' 2>/dev/null)"
+    printf '\n  %sAyarlar%s  %s(canlı okundu)%s\n' "$B" "$R" "$D" "$R"
+    if [[ "$SUB" == "true" ]]; then
+      printf '    alt ajan devri  %sAÇIK%s\n' "$G" "$R"
+    else
+      printf '    alt ajan devri  %sKAPALI%s — roller görev alamaz\n' "$D" "$R"
+      printf '                    aç: Settings → Agent → Sub-agents\n'
+    fi
+    printf '    model           %s\n' "$MDL"
     printf '\n  %sRoller%s  %s(Canvas her konuşmada kendiliğinden yükler)%s\n' "$B" "$R" "$D" "$R"
     for r in "$AI_ROOT/data/canvas/agents"/*.md; do
       [ -e "$r" ] || { printf '    %s(kurulu değil)%s\n' "$D" "$R"; break; }

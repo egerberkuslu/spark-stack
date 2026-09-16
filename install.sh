@@ -599,6 +599,32 @@ if (( WITH_CANVAS )); then
     printf '\r\033[K'
     ok "Agent Canvas: http://localhost:$CP/canvas"
     log "   panel anahtarı (.env içinde CANVAS_KEY): ${CANVAS_KEY:-üretildi}"
+
+    # ── Canvas'ı elle ayar gerektirmeyecek hale getir ────────────────────
+    #  İki şey ayar API'sinden tohumlanıyor: modelin yerel kapıya bakması ve
+    #  alt ajan devrinin açılması. İkincisi kritik — varsayılanı KAPALI ve
+    #  kapalıyken devir aracı hiç yüklenmiyor, yani roller görev alamıyor.
+    CAPI="http://127.0.0.1:$CP/api/settings"
+    SEED=$(cat <<JSON
+{"agent_settings_diff":{"enable_sub_agents":true,
+ "llm":{"model":"litellm_proxy/$FALLBACK_MAIN","base_url":"http://litellm:4000","api_key":"${LITELLM_KEY:-sk-spark}"}}}
+JSON
+)
+    if curl -sf -X PATCH "$CAPI" -H "X-Session-API-Key: ${CANVAS_KEY:-}" \
+         -H 'Content-Type: application/json' -d "$SEED" >>"$LOGFILE" 2>&1; then
+      # Yazdık demek yetmez; geri okuyup gerçekten oturmuş mu bakıyoruz.
+      CCHK="$(curl -sf "$CAPI" -H "X-Session-API-Key: ${CANVAS_KEY:-}" 2>/dev/null \
+              | jq -r '[(.. | objects | select(has("enable_sub_agents")) | .enable_sub_agents)] | first // "yok"' 2>/dev/null)"
+      if [[ "$CCHK" == "true" ]]; then
+        ok "Canvas ayarlandı — alt ajan devri AÇIK, model litellm_proxy/$FALLBACK_MAIN"
+        log "   roller kendiliğinden yüklenir: spark-kod · spark-test · spark-denetci"
+      else
+        warn "ayar yazıldı ama doğrulanamadı (okunan: $CCHK) — 'spark canvas' ile bak"
+      fi
+    else
+      warn "Canvas ayarı tohumlanamadı — panelden elle: Settings → Agent → Sub-agents açık,"
+      log "   Settings → LLM: litellm_proxy/$FALLBACK_MAIN · http://litellm:4000 · ${LITELLM_KEY:-sk-spark}"
+    fi
   else
     warn "Agent Canvas açılmadı — spark logs canvas"
   fi

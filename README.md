@@ -264,9 +264,11 @@ içinde `~/.openhands/agents/`). Canvas her konuşma başlarken bu dizini kendil
 rolleri devir kaydına yazar, yani `spark-kod`'a görev verilebilir. İki sürüm arasındaki tek
 fark iki alan: kural yolu (`~/vault` / `/vault`) ve model adı (`opus` / `litellm_proxy/opus`).
 
-**Canvas'ta bir ayarı elle açman gerekiyor:** Settings → Agent → **Sub-agents**. Varsayılanı
-kapalıdır ve açılmazsa yönlendiren ajan rollere görev veremez. `spark canvas` bunu ve kurulu
-rolleri listeler.
+**Kurulum gerekli ayarı kendi yapar.** Canvas ayağa kalkınca `PATCH /api/settings` ile iki şey
+tohumlanır: alt ajan devri açılır (`enable_sub_agents`, varsayılanı kapalıdır ve kapalıyken
+devir aracı hiç yüklenmez) ve model yerel kapıya bağlanır. Yazmakla yetinmeyip geri okuyup
+doğrular; tutmazsa uyarır ve elle yapılacak adımı yazar. `spark canvas` bu ayarı her seferinde
+canlı okuyup gösterir, yani "açık sanıyordum" durumu olmaz.
 
 Kuralları düzenlemek için dosyaları doğrudan aç, ya da `wiki` komutuyla bilgi tabanında çalış.
 
