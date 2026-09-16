@@ -238,6 +238,39 @@ Ofis dışı erişim için Tailscale önerilir — port açmayı ve sabit IP'yi 
 
 ---
 
+## Ajanlar arası işbirliği
+
+Aynı kapıdan geçen iki ajan hâlâ birbirinden habersiz çalışabilir. İşbirliğini kuran şey ortak
+bir sözleşmedir ve o sözleşme bilgi tabanında durur.
+
+![İşbirliği akışı](docs/figures/spark-isbirligi-akisi.png)
+
+Kurallar `~/vault/kurallar/` altında dört dosyadadır: `kod-standartlari.md`, `test-kurallari.md`,
+`pr-kurallari.md`, `yazim-kurallari.md`. Kurulum bunları taslak olarak koyar, varsa üzerine
+yazmaz. **Hiçbir ajan tanımı bu metni kopyalamaz, yerini gösterir** — kopya eskir, tek kaynak
+eskimez. Bir kuralı vault'ta değiştirdiğinde bütün ajanlar o an yeni kurala bağlanır.
+
+Üç rol kurulur ve kimse kendi işini onaylamaz:
+
+| Rol | Yapar | Yapmaz |
+|---|---|---|
+| `spark-kod` | kod yazar, değiştirir | test yazmaz, kendini onaylamaz |
+| `spark-test` | test yazar ve **çalıştırır** | kodu düzeltmez, geri devreder |
+| `spark-denetci` | denetler, PR açıklaması hazırlar | kod yazmaz, **birleştirmez** |
+
+Roller host'taki Claude Code'un mekanizmasıdır (`~/.claude/agents/`). Agent Canvas kabındaki
+ajanı aynı sözleşmeye bağlayan şey proje kökündeki `AGENTS.md` dosyasıdır; kurulum onu da
+`~/projects/AGENTS.md` olarak koyar. İki taraf farklı mekanizmayla aynı kurallara varır.
+
+Kuralları düzenlemek için dosyaları doğrudan aç, ya da `wiki` komutuyla bilgi tabanında çalış.
+
+Dürüst sınır: roller arasındaki devir bir protokol değil, yönlendirmedir. Yönlendiren ajan işi
+böler ve sırayla çağırır; roller birbirini doğrudan çağırmaz. Tek makinede yeterli çalışır,
+ayrı makinelerdeki ajanların birbirini bulması için gereken ajan-ajan protokolü bu mimaride
+henüz yok. Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
+
+---
+
 ## Agent Canvas — ajan kontrol merkezi
 
 `--with-canvas` (ya da `--all`) ile [Agent Canvas](https://github.com/OpenHands/OpenHands) kurulur: konuşmalar, dosyalar, terminal, model ayarları ve otomasyonlar tek panelden yönetilir. Otomasyonlar webhook ve zamanlayıcıyla tetiklenir — PR incelemesi, depo gözcüsü gibi işleri buraya kurarsın.

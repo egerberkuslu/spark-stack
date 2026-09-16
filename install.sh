@@ -42,7 +42,7 @@ else B=""; D=""; R=""; RED=""; GRN=""; YLW=""; BLU=""; fi
 STEP_KEYS=(precheck docker layout images models gateway boot claude mcp skills wiki nemoclaw verify)
 STEP_NAME=("Ön kontrol" "Docker + GPU altyapısı" "Dosya düzeni" "İmajlar indiriliyor" \
            "Model ağırlıkları" "Kapı ayarı" "Servisler açılıyor" "Claude Code" \
-           "MCP sunucuları" "Skill'ler" "Obsidian + bilgi tabanı" "NemoClaw ajan kabı" \
+           "MCP sunucuları" "Skill'ler ve roller" "Obsidian + bilgi tabanı" "NemoClaw ajan kabı" \
            "Doğrulama")
 STEP_WEIGHT=(1 6 1 12 50 2 15 4 8 3 3 6 1)
 TOTAL_WEIGHT=0; DONE_WEIGHT=0; CUR=0; STEP_START=0
@@ -665,31 +665,51 @@ else
   else warn "superpowers alınamadı — sonra: /plugin install superpowers@superpowers-marketplace"; fi
   sudo rm -rf "$T"
 fi
-[[ -f "$HOME/.claude/skills/sirket-kurallari/SKILL.md" ]] || {
+# ── Ortak sözleşme: kurallar vault'ta, roller ajanlarda ────────────────────
+#  Kuralların metni tek yerde (bilgi tabanında) durur. Skill ve rol dosyaları
+#  onun metnini KOPYALAMAZ, yerini gösterir — kopya eskir, tek kaynak eskimez.
+#  Böylece bir kuralı vault'ta değiştirdiğinde host'taki Claude Code da, Agent
+#  Canvas kabındaki ajan da aynı anda yeni kurala bağlanmış olur.
+KURALLAR="$VAULT_PATH/kurallar"
+if [[ -d "$SRC_DIR/roller" ]]; then
+  mkdir -p "$KURALLAR"
+  YENI=0
+  for f in "$SRC_DIR/roller/kurallar/"*.md; do
+    [[ -e "$f" ]] || continue
+    if [[ -f "$KURALLAR/$(basename "$f")" ]]; then continue; fi
+    cp "$f" "$KURALLAR/"; YENI=$((YENI+1))
+  done
+  if (( YENI )); then ok "kural taslakları bilgi tabanına kondu: $KURALLAR ($YENI dosya)"
+  else ok "kurallar zaten var, üzerine yazılmadı: $KURALLAR"; fi
+
+  # Skill: kuralların yerini söyler, metnini taşımaz
   mkdir -p "$HOME/.claude/skills/sirket-kurallari"
-  cat > "$HOME/.claude/skills/sirket-kurallari/SKILL.md" <<'SK'
----
-name: sirket-kurallari
-description: Şirketin kod, commit ve PR kuralları. Kod yazarken, commit mesajı veya PR açıklaması hazırlarken kullan.
----
+  sed "s|__KURALLAR__|$KURALLAR|g" "$SRC_DIR/roller/SKILL.md" \
+    > "$HOME/.claude/skills/sirket-kurallari/SKILL.md"
+  ok "skill: sirket-kurallari → $KURALLAR"
 
-# Şirket kuralları
+  # Roller: yazan, test eden ve denetleyen ayrı ajanlar
+  mkdir -p "$HOME/.claude/agents"
+  ROL=0
+  for f in "$SRC_DIR/roller/agents/"*.md; do
+    [[ -e "$f" ]] || continue
+    sed "s|__KURALLAR__|$KURALLAR|g" "$f" > "$HOME/.claude/agents/$(basename "$f")"
+    ROL=$((ROL+1))
+  done
+  ok "$ROL rol kuruldu: spark-kod · spark-test · spark-denetci"
 
-Bu dosyayı kendi kurallarınla doldur.
-
-## Kod
-- Değişken/fonksiyon isimleri İngilizce, yorumlar Türkçe.
-- Her yeni fonksiyon için test yaz.
-- Yeni bağımlılık eklemeden önce sor.
-
-## Commit
-- Türkçe, emir kipi: "kullanıcı girişini doğrula"
-- İlk satır 60 karakteri geçmesin.
-
-## PR
-- Başlıklar: Ne değişti / Neden / Nasıl test edildi
-SK
-  ok "örnek skill: ~/.claude/skills/sirket-kurallari/"; }
+  # Proje sözleşmesi: çalışma dizinindeki AGENTS.md'yi her iki taraf da okur
+  PROJ="${CANVAS_PROJECTS:-$HOME/projects}"
+  mkdir -p "$PROJ"
+  if [[ -f "$PROJ/AGENTS.md" ]]; then
+    log "AGENTS.md zaten var, dokunulmadı: $PROJ/AGENTS.md"
+  else
+    cp "$SRC_DIR/roller/AGENTS.md" "$PROJ/AGENTS.md"
+    ok "proje sözleşmesi: $PROJ/AGENTS.md"
+  fi
+else
+  warn "roller/ klasörü bulunamadı — kurallar ve roller kurulmadı"
+fi
 send
 
 # ── 10 OBSIDIAN + BİLGİ TABANI ──────────────────────────────────────────────

@@ -88,6 +88,40 @@ kapta karşılar. Dışarıdan gelen metne güvenmemek gereken tek yer burasıd�
 
 ---
 
+## Ajanlar nasıl işbirliği yapıyor
+
+Ortak zemin tek başına işbirliği değildir. Aynı kapıdan geçen, aynı vault'u gören iki ajan
+hâlâ birbirinden habersiz çalışabilir. İşbirliğini kuran üç şey var ve üçü de somut.
+
+![İşbirliği akışı](figures/spark-isbirligi-akisi.png)
+
+**Ortak sözleşme: kurallar vault'ta.** Kod standartları, test kuralları, PR kuralları ve
+yazım kuralları `vault/kurallar/` altında dört dosyada durur. Hiçbir ajan tanımı, hiçbir
+skill bu metni kopyalamaz — yalnızca yerini gösterir. Sebebi şu: kopyalanan kural eskir,
+ajan tanımları birbirinden ayrışır ve bir süre sonra iki ajan farklı kurala uyar. Tek kaynak
+eskimez. Bir kuralı vault'ta değiştirdiğinde host'taki Claude Code da, Canvas kabındaki ajan
+da o an yeni kurala bağlanmış olur; yeniden kurulum gerekmez.
+
+**İş bölümü: kimse kendi işini onaylamaz.** Üç rol kurulur ve her biri diğerinin yapamadığını
+yapar. `spark-kod` yazar ama test yazmaz. `spark-test` testi yazar ve **çalıştırır**, çıktısını
+rapora koyar; kırılan testi kendisi düzeltmez, geri devreder. `spark-denetci` değişikliğin
+tamamını okur, bulgularını engelleyici / düzeltilmeli / öneri diye ayırır, PR açıklamasını
+hazırlar ve orada durur — birleştirme kararı insanındır. Bu ayrım bir üslup tercihi değil:
+kodu yazan, kendi varsayımını doğrulamaya eğilimlidir.
+
+**Bağlanma noktası: çalışma dizinindeki `AGENTS.md`.** Roller host'taki Claude Code'un
+mekanizmasıdır. Canvas kabındaki ajan onları görmez; onu bağlayan şey proje kökündeki
+`AGENTS.md` dosyasıdır ve o dosya aynı vault yollarını, aynı iş bölümünü, aynı model
+seçimini anlatır. Böylece iki taraf farklı mekanizmalarla aynı sözleşmeye varır.
+
+Bugünkü sınır şudur: **rollerin arasındaki devir protokol değil, yönlendirmedir.** Yönlendiren
+ajan işi böler ve sırayla çağırır; roller birbirini doğrudan çağırmaz, aralarında bir mesaj
+kuyruğu ya da ajan kaydı yoktur. Tek makinede ve tek konuşma içinde bu yeterli çalışır.
+Ajanların ayrı süreçlerde, ayrı makinelerde birbirini bulması gerektiğinde asıl gereken şey
+bir ajan-ajan protokolüdür; o da bu mimaride henüz yok.
+
+---
+
 ## Kim neyi görüyor
 
 Parçalar birbirine bağlanırken asıl soru "hangi ajan neye erişebiliyor" olur. Tablo bugünkü
@@ -117,6 +151,12 @@ servisler; onlara ihtiyaç duyan işi host'taki Claude Code'a bırakmak doğru o
 isteği karşılayan kap, yani en az güvenilen giriş noktası. Gerekirse `nemoclaw onboard` komutunun
 `--host-mount <host-yolu:/kap-yolu>` seçeneği salt okunur bağlama yapıyor; ama varsayılanda
 kapalı bırakıldı.
+
+**Kurallara hangi yoldan bağlanıyorlar.** Mekanizma ortamına göre değişir, varılan yer aynıdır:
+host'taki Claude Code `sirket-kurallari` skill'i ve `spark-*` rolleri üzerinden, Canvas kabındaki
+ajan proje kökündeki `AGENTS.md` üzerinden. İkisi de `kurallar/` klasöründeki aynı dört dosyaya
+çıkar. NemoClaw kabı vault'u görmediği için sözleşmeye bağlı değildir; oraya gönderilen iş,
+kuralların uygulanmasının beklenmediği iş olmalıdır.
 
 ---
 

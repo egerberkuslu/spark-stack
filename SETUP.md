@@ -167,6 +167,32 @@ Düzeni geri almak için `--no-swap` ile yeniden kur; kapı yeniden katmanlara d
 
 ---
 
+## Şirket kuralları ve roller
+
+Kurulum bilgi tabanına dört kural dosyası koyar ve makinene üç rol kurar. Kurallar taslaktır;
+kendi kurallarınla değiştirmen beklenir. **Varsa üzerine yazılmaz** — `--resume` ile tekrar
+çalıştırsan da düzenlediğin dosyalar korunur.
+
+```
+~/vault/kurallar/kod-standartlari.md     kod yazarken
+~/vault/kurallar/test-kurallari.md       test yazarken
+~/vault/kurallar/pr-kurallari.md         commit ve PR hazırlarken
+~/vault/kurallar/yazim-kurallari.md      doküman, yorum, rapor yazarken
+```
+
+Roller `~/.claude/agents/` altına kurulur: `spark-kod`, `spark-test`, `spark-denetci`. Claude
+Code bir iş çok adımlıysa bunlara devreder; her rol işe başlamadan önce ilgili kural dosyasını
+okur.
+
+Agent Canvas kabındaki ajan bu rolleri görmez. Onu aynı sözleşmeye bağlayan şey
+`~/projects/AGENTS.md` dosyasıdır; kurulum onu da koyar ve kap `/vault` üzerinden aynı kural
+dosyalarına bakar.
+
+Kuralı değiştirmek için dosyayı doğrudan aç. Tek kaynak olduğu için, kaydettiğin an bütün
+ajanlar yeni kurala bağlanır; yeniden kurulum gerekmez.
+
+---
+
 ## Agent Canvas — ajan kontrol merkezi
 
 `--with-canvas` (veya `--all`) ile kurulur. Konuşmalar, dosyalar, terminal ve otomasyonlar tek panelden yönetilir; ajan kabın içinde koşar ve yalnızca `/projects` altına bağladığın klasörü görür.
