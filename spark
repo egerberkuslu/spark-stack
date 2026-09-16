@@ -2,10 +2,11 @@
 # =============================================================================
 #  spark — spark-stack yönetim komutu (her şey Docker)
 #
-#    spark up [demo|daily|fable|swap|extras|stt]  servisleri aç (varsayılan: daily)
+#    spark up [demo|daily|fable|swap|canvas|extras|stt]  servisleri aç (varsayılan: daily)
 #    spark down                          hepsini kapat
 #    spark status                        ne çalışıyor, bellek, disk
 #    spark swap                          llama-swap durumu: hangi katman ayakta
+#    spark canvas                        Agent Canvas adresi ve panel anahtarı
 #    spark logs [servis]                 canlı log
 #    spark pull <sonnet|opus|fable>      model ağırlığı indir (konteynerle)
 #    spark models                        katman → model eşlemesi ve durum
@@ -26,9 +27,10 @@ DC="$DKR compose --env-file $AI_ROOT/compose/.env -f $AI_ROOT/compose/docker-com
 
 B=$'\033[1m'; D=$'\033[2m'; G=$'\033[1;32m'; R=$'\033[0m'
 
-port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; gateway) echo 4000;; swap) echo 8080;; esac; }
+port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; gateway) echo 4000;; swap) echo "${SWAP_PORT:-8081}";; esac; }
 alive()   { curl -sf "http://127.0.0.1:$(port_of "$1")/${2:-v1/models}" >/dev/null 2>&1; }
-swap_on() { $DKR ps --filter name=sk-llamaswap --filter status=running -q 2>/dev/null | grep -q .; }
+swap_on()   { $DKR ps --filter name=sk-llamaswap --filter status=running -q 2>/dev/null | grep -q .; }
+canvas_on() { $DKR ps --filter name=sk-canvas    --filter status=running -q 2>/dev/null | grep -q .; }
 
 # GB10'da "nvidia-smi --query-gpu=memory.*" çoğu sürümde "Not Supported" döner:
 # bellek GPU'ya ayrılmış değil, CPU ile ortak. O durumda /proc/meminfo'ya düşeriz.
@@ -58,6 +60,11 @@ case "${1:-status}" in
 
   up)
     PROFILE="${2:-daily}"
+    if [[ "$PROFILE" == "canvas" ]]; then
+      $DC --profile canvas up -d || exit 1
+      echo ">> Agent Canvas açılıyor"
+      exec "$0" canvas
+    fi
     # llama-swap düzeni: konteynerler kapalı oluşturulur, açmayı llama-swap üstlenir
     if [[ "$PROFILE" == "swap" ]]; then
       echo ">> model konteynerleri oluşturuluyor (kapalı)"
@@ -90,7 +97,7 @@ case "${1:-status}" in
     ;;
 
   down)
-    $DC --profile demo --profile daily --profile fable --profile swap --profile extras --profile stt down
+    $DC --profile demo --profile daily --profile fable --profile swap --profile canvas --profile extras --profile stt down
     echo "kapatıldı"
     ;;
 
@@ -102,7 +109,7 @@ case "${1:-status}" in
       exit 1
     fi
     printf '\n  %sllama-swap%s  ·  katman istek anında açılır\n\n' "$B" "$R"
-    OUT="$(curl -sf --max-time 10 http://127.0.0.1:8080/running 2>/dev/null || true)"
+    OUT="$(curl -sf --max-time 10 "http://127.0.0.1:${SWAP_PORT:-8081}/running" 2>/dev/null || true)"
     if [[ -z "$OUT" ]]; then
       echo "  (llama-swap cevap vermedi — spark logs llamaswap)"
     elif ! echo "$OUT" | jq -e . >/dev/null 2>&1; then
@@ -117,6 +124,25 @@ case "${1:-status}" in
       fi
     fi
     printf '\n  Bellek      : %s\n\n' "$(memread)"
+    ;;
+
+  canvas)
+    CP="${CANVAS_PORT:-8300}"
+    if ! canvas_on; then
+      echo "Agent Canvas çalışmıyor."
+      echo "  kur:  bash install.sh --with-canvas --resume"
+      echo "  aç :  spark up canvas"
+      exit 1
+    fi
+    printf '\n  %sAgent Canvas%s\n\n' "$B" "$R"
+    printf '    adres          http://localhost:%s/canvas\n' "$CP"
+    printf '    panel anahtarı %s\n' "${CANVAS_KEY:-(.env içinde CANVAS_KEY yok)}"
+    printf '    projeler       %s  %s(ajan yalnız burayı görür)%s\n' "${CANVAS_PROJECTS:-?}" "$D" "$R"
+    printf '\n  %sSettings → LLM%s  (bir kez elle girilir, env ile ayarlanamıyor)\n' "$B" "$R"
+    printf '    Model     litellm_proxy/%s\n' "${CANVAS_MODEL:-opus}"
+    printf '    Base URL  http://litellm:4000\n'
+    printf '    API Key   %s\n' "${LITELLM_KEY:-sk-spark}"
+    printf '\n  %sSettings → Agent%s  Preset: Claude Code  %s(kap zaten yerel kapıya bakıyor)%s\n\n' "$B" "$R" "$D" "$R"
     ;;
 
   status)
@@ -135,6 +161,9 @@ case "${1:-status}" in
     curl -sf http://127.0.0.1:3000 >/dev/null 2>&1 && printf '  %-9s %sÇALIŞIYOR%s  http://localhost:3000\n' "webui" "$G" "$R"
     if swap_on; then
       printf '  %-9s %sÇALIŞIYOR%s  katmanlar istek anında açılıyor · ayrıntı: spark swap\n' "swap" "$G" "$R"
+    fi
+    if canvas_on; then
+      printf '  %-9s %sÇALIŞIYOR%s  http://localhost:%s/canvas\n' "canvas" "$G" "$R" "${CANVAS_PORT:-8300}"
     fi
     printf '\n  Bellek      : %s\n' "$(memread)"
     printf '  Modeller    : %s\n' "$(du -sh "$AI_ROOT/models" 2>/dev/null | cut -f1)"
@@ -184,7 +213,7 @@ case "${1:-status}" in
       | jq -r '.choices[0].message.content // .error.message'
     ;;
 
-  update) $DC --profile daily --profile fable --profile swap --profile extras pull ;;
+  update) $DC --profile daily --profile fable --profile swap --profile canvas --profile extras pull ;;
 
-  *) sed -n '4,14p' "$0" | sed 's/^# \?//' ;;
+  *) sed -n '4,15p' "$0" | sed 's/^# \?//' ;;
 esac

@@ -142,6 +142,7 @@ bash install.sh --with-wiki --resume       # Obsidian + bilgi tabanı
 bash install.sh --with-extras --resume     # Open WebUI + Qdrant + Whisper
 bash install.sh --with-nemoclaw --resume   # NemoClaw ajan kabı
 bash install.sh --with-swap --resume       # llama-swap ile talep-güdümlü katman
+bash install.sh --with-canvas --resume     # Agent Canvas kontrol merkezi
 ```
 
 ---
@@ -163,6 +164,31 @@ Kurulum sonunda ana katman bir kez ısıtılır. Soğuk bir katmana ilk geçişt
 Ayarlar `/srv/ai/compose/.env` içinde: `SWAP_TTL` (boşta düşme süresi), `SWAP_TTL_FABLE` gibi katman başına süreler, `SWAP_HEALTH_TIMEOUT` (ilk açılış payı), `SWAP_BIND`.
 
 Düzeni geri almak için `--no-swap` ile yeniden kur; kapı yeniden katmanlara doğrudan bakar.
+
+---
+
+## Agent Canvas — ajan kontrol merkezi
+
+`--with-canvas` (veya `--all`) ile kurulur. Konuşmalar, dosyalar, terminal ve otomasyonlar tek panelden yönetilir; ajan kabın içinde koşar ve yalnızca `/projects` altına bağladığın klasörü görür.
+
+```bash
+spark up canvas               # aç
+spark canvas                  # adres, panel anahtarı, girilecek ayarlar
+```
+
+Panel: `http://localhost:8300/canvas` — kendi portu 8000 ama onu `sonnet` kullandığı için 8300'e taşındı.
+
+İlk açılışta **Settings → LLM** bir kez elle doldurulur (bu ayar env değişkeniyle yapılamıyor):
+
+| Alan | Değer |
+|---|---|
+| Model | `litellm_proxy/opus` |
+| Base URL | `http://litellm:4000` |
+| API Key | `.env` içindeki `LITELLM_KEY` |
+
+Claude Code'u alt ajan olarak çalıştırmak için **Settings → Agent → Preset: Claude Code**. Kap zaten yerel kapıya bakacak şekilde kurulu (`ANTHROPIC_BASE_URL`). Claude aboneliğinin OAuth token'ını buraya girme — base URL ile birlikte çalışmıyor.
+
+Proje klasörünü değiştirmek için `--projects ~/kod`.
 
 ---
 
@@ -218,6 +244,8 @@ Mevcut bir Obsidian vault'un varsa script `adopt` akışını kullanır ve içer
 | Servis açılmıyor | `spark logs <katman>` |
 | `/model fable` dedim, Claude Code zaman aşımına düştü | Soğuk açılış 3-4 dk. Önce `spark ask "merhaba" fable` ile ısıt, sonra geç. |
 | `spark swap` "llama-swap çalışmıyor" diyor | `spark up swap`; hâlâ olmuyorsa `spark logs llamaswap` |
+| Agent Canvas açılıyor ama model cevap vermiyor | Settings → LLM bir kez elle girilmeli; `spark canvas` ne yazacağını gösterir |
+| Canvas logunda `permission denied` (.openhands) | `.env` içindeki `CANVAS_UID`/`CANVAS_GID` seninkiyle eşleşmiyor: `id -u`, `id -g` ile bak, düzelt, `spark up canvas` |
 | llama-swap logunda `permission denied` (docker.sock) | `.env` içindeki `DOCKER_GID` host'un docker grubuyla eşleşmiyor: `getent group docker` ile bak, düzelt, `spark up swap` |
 | Katman açılmıyor, llama-swap `health check timed out` diyor | `.env` içinde `SWAP_HEALTH_TIMEOUT` değerini artır (varsayılan 2100 sn), `spark up swap` |
 | `nemoclaw` komutu bulunamıyor | Kurulum onu `~/.local/bin` altına koyar; yeni terminal aç ya da `export PATH="$HOME/.local/bin:$PATH"` |

@@ -71,13 +71,61 @@ Pratikte: `SWAP_TTL_FABLE` kısa tutulur, fable yalnız geliştiricinin anahtar�
 Claude Code host'ta çalışır, geliştiricinin dosyalarına doğrudan erişir. Bu bir kusur değil,
 eşli programlamanın gereği — ama yanında insan olduğu için kabul edilebilir.
 
-Agent Canvas'ın Docker çalışma zamanı, insansız işler içindir. Ajan konuşma başına
-ayrı bir kapta çalışır; `rm -rf` yaparsa kabı siler, makineyi değil. **Ama bu davranış
-varsayılan değildir, açıkça açılması gerekir** (`OH_EXECUTION_RUNTIME=docker`). Varsayılan
-kurulumda ajan doğrudan makinede koşar. Otomasyon kuracaksan bu ayarı atlamamak lazım.
+Agent Canvas insansız işler içindir ve burada iki ayrı yalıtım seviyesi var, karıştırmamak
+gerekiyor. Konteyner olarak kurduğumuzda ajan zaten Canvas kabının içinde koşar; makinenin
+dosya sistemine erişemez, yalnızca kaba bağladığımız proje klasörünü görür. `rm -rf` yaparsa
+kabı ve o klasörü vurur, makineyi değil. Bunun üstünde bir de **konuşma başına ayrı kap**
+seçeneği var (`OH_CONVERSATION_RUNTIME=docker`); varsayılan olarak kapalıdır ve açmak için
+Canvas'a docker soketini vermek gerekir. Biz kapalı bırakıyoruz: kap sınırı zaten var,
+soketi vermek yalıtımı güçlendirmek yerine zayıflatırdı.
+
+Agent Canvas'ı `npm install -g` ile doğrudan makineye kurmak ise bambaşka bir şeydir; kendi
+belgelerinde "the agent will have full access to your filesystem!" uyarısı var. Biz o yolu
+kullanmıyoruz.
 
 NemoClaw dışarıya açık işler içindir: mesaj kanalından gelen isteği, ağ politikası olan bir
 kapta karşılar. Dışarıdan gelen metne güvenmemek gereken tek yer burasıdır.
+
+---
+
+## Kim neyi görüyor
+
+Parçalar birbirine bağlanırken asıl soru "hangi ajan neye erişebiliyor" olur. Tablo bugünkü
+gerçeği gösterir; boş hücre eksiklik değil, bilinçli sınırdır.
+
+| Ajan | Nerede koşar | Modele nasıl bağlanır | Dosya erişimi | Bilgi tabanı | MCP sunucuları |
+|---|---|---|---|---|---|
+| Claude Code | host | `ANTHROPIC_BASE_URL` → :4000 | senin bütün home'un | vault, okuma-yazma | yedisi de var |
+| Agent Canvas yerleşik ajanı | canvas kabı | `litellm_proxy/...` → `litellm:4000` | yalnız `/projects` | `/vault`, salt okunur | yok |
+| Claude Code (Canvas içinde, ACP) | canvas kabı | `ANTHROPIC_BASE_URL` → `litellm:4000` | yalnız `/projects` | `/vault`, salt okunur | yok |
+| NemoClaw ajanı | OpenShell kabı | `inference.local` → :4000 | kabın kendi alanı | yok | yok |
+
+Üç şeyi açıklamak gerekiyor.
+
+**Vault neden salt okunur.** Bilgi tabanı ortak bir varlık: kararlar, tasarım notları,
+kaynaklar. Bir otomasyonun yanlışlıkla silebileceği yerde durmamalı. Ajanlar notlara
+bakabilir, arayabilir, alıntılayabilir; yazma işi insanın onayladığı `wiki` akışında kalır
+(claude-obsidian zaten iki aşamalı onay istiyor: önce plan, sonra planın sha256'sıyla uygula).
+
+**Kaplarda neden MCP yok.** Kurduğumuz yedi MCP sunucusunun hepsi `docker run` ile çalışıyor.
+Canvas kabının içinde docker yok, olması da istenmez. Ama orada ajanın zaten yerleşik dosya ve
+kabuk araçları var ve bunlar kabın sınırında duruyor — yani MCP'nin sağladığı erişimi, daha dar
+bir yetkiyle, kabın kendisi veriyor. Eksik olan tek şey `context7` ve `playwright` gibi dış
+servisler; onlara ihtiyaç duyan işi host'taki Claude Code'a bırakmak doğru olur.
+
+**NemoClaw kabı vault'u görmüyor.** Bu bir eksiklik ve bilinçli: NemoClaw dışarıdan gelen
+isteği karşılayan kap, yani en az güvenilen giriş noktası. Gerekirse `nemoclaw onboard` komutunun
+`--host-mount <host-yolu:/kap-yolu>` seçeneği salt okunur bağlama yapıyor; ama varsayılanda
+kapalı bırakıldı.
+
+---
+
+## Portlar tek makinede nasıl paylaşılıyor
+
+Hepsi `127.0.0.1`'e bağlı. İki tanesi bilerek kaydırıldı: Agent Canvas kendi içinde 8000
+dinliyor ama o portu `sonnet` tuttuğu için dışarı 8300'den açılıyor, llama-swap da 8081'e
+alındı çünkü 8080 NemoClaw'ın OpenShell gateway'inin varsayılanı. Tam liste
+[README'nin Portlar bölümünde](../README.md#portlar).
 
 ---
 
@@ -131,15 +179,30 @@ ayrı bir kapı açmaktan iyidir.
 
 ---
 
-## Agent Canvas hakkında iki not
+## Canvas → Claude Code → yerel model
 
-Agent Canvas (OpenHands deposunun bugünkü hali) ACP üzerinden Claude Code'u kendi içinde
-alt ajan olarak çalıştırabiliyor; belgeli ve yayınlanmış bir özellik. Bu bize şunu verir:
-OpenHands üst katmanda konuşmayı, otomasyonu ve kabı yönetir, Claude Code kendi araç ve
-bağlam işini yapmaya devam eder.
+Agent Canvas, Claude Code'u ACP üzerinden kendi içinde alt ajan olarak çalıştırabiliyor;
+belgeli ve yayınlanmış bir özellik, sarmalayıcı imajın içinde hazır geliyor. Üst katmanda
+Canvas konuşmayı, otomasyonu ve kabı yönetir; Claude Code kendi araç, bağlam ve model
+işini yapmaya devam eder. Zincirin son halkası bizim kurduğumuz kısım:
 
-Ama bu zincirin son halkası, yani **Claude Code'un yerel modelimize bağlanması, OpenHands
-tarafından belgelenmiş bir yol değil.** Kendi kurduğumuz `ANTHROPIC_BASE_URL` + API anahtarı
-bağlantısı olur. Belgelerde açık bir uyarı da var: bu base URL'i Claude aboneliğinin OAuth
-token'ıyla birlikte kullanmak, token'ın kimlik doğrulamasını sessizce bozuyor. Yani ya
-abonelik ya yerel kapı; ikisi bir arada değil.
+```
+Agent Canvas  →  Claude Code (ACP alt ajanı)  →  LiteLLM :4000  →  yerel katman
+```
+
+Bunu `ANTHROPIC_BASE_URL=http://litellm:4000` ve `ANTHROPIC_API_KEY` ile kuruyoruz; ikisi de
+compose'da Canvas kabına veriliyor. Kapımız Anthropic uyumlu `/v1/messages` ucunu zaten
+sunduğu için Claude Code'un kendi protokolü bozulmadan yerel modele iner. Gelen model adı
+`claude-sonnet-4-5` gibi bir şey olsa bile `litellm.yaml` içindeki `claude-*` kuralı onu ana
+katmana düşürür.
+
+**Abonelik token'ı verilmez.** OpenHands belgelerinde açık uyarı var: `ANTHROPIC_BASE_URL`
+ile `CLAUDE_CODE_OAUTH_TOKEN` birlikte kullanıldığında token'ın kimlik doğrulaması sessizce
+bozuluyor, çünkü bearer başka bir uca yönleniyor. Kaynak kodda da bu ikisi çakışan çift
+olarak işaretli. Yani ya abonelik ya yerel kapı; bu kurulumda tercih yerel kapıdır ve
+`CLAUDE_CODE_OAUTH_TOKEN` bilerek boş bırakılır.
+
+Bilinen pürüzler, bugünkü hâliyle: ACP üzerinden çalışan Claude Code, Canvas'ın yerleşik
+skill'lerini göremiyor; ACP konuşmaları için duraklat/iptal yok; aynı sağlayıcıyla eş
+zamanlı iki konuşma kap içinde aynı HOME'u paylaşıp yarışabiliyor. Üçü de üst akışta açık
+kayıt. Tek ajanla çalışırken sorun çıkarmıyor.

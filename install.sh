@@ -12,6 +12,7 @@
 #    --with-wiki         Obsidian + claude-obsidian bilgi tabanı              #
 #    --with-nemoclaw     NVIDIA NemoClaw ajan kabı (--all dahil)              #
 #    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
+#    --with-canvas       Agent Canvas ajan kontrol merkezi (--all dahil)      #
 #    --vault PATH        vault yolu (varsayılan ~/vault)                      #
 #    --resume            yarım kalan kurulumu sürdür                          #
 #    --status            servis durumu     --uninstall   tümünü kaldır        #
@@ -28,7 +29,7 @@ AI_ROOT="${AI_ROOT:-/srv/ai}"
 MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
-WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0
+WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0; WITH_CANVAS=0
 RESUME=0; MODE=install; DEMO=0
 TIERS=(haiku sonnet opus)          # varsayılan kurulum katmanları
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-}"
@@ -138,16 +139,18 @@ DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
   --demo) DEMO=1; TIERS=(haiku sonnet) ;;
-  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1 ;;
+  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1; WITH_CANVAS=1 ;;
   --with-fable) WITH_FABLE=1 ;; --with-extras) WITH_EXTRAS=1 ;;
   --with-nemoclaw) WITH_NEMOCLAW=1 ;; --no-nemoclaw) WITH_NEMOCLAW=0 ;;
   --with-swap) WITH_SWAP=1 ;; --no-swap) WITH_SWAP=0 ;;
+  --with-canvas) WITH_CANVAS=1 ;; --no-canvas) WITH_CANVAS=0 ;;
+  --projects) shift; CANVAS_PROJECTS="${1:-}" ;; --projects=*) CANVAS_PROJECTS="${1#--projects=}" ;;
   --sandbox) shift; NEMOCLAW_SANDBOX="${1:-spark}" ;; --sandbox=*) NEMOCLAW_SANDBOX="${1#--sandbox=}" ;;
   --with-wiki) WITH_WIKI=1 ;; --vault) shift; OBSIDIAN_VAULT="${1:-}"; WITH_WIKI=1 ;;
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,17p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,18p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
@@ -157,7 +160,7 @@ if [[ "$MODE" == uninstall ]]; then
   printf '\n%s  Silinecek: tüm konteynerler + %s (modeller dahil)%s\n' "$YLW" "$AI_ROOT" "$R"
   read -rp "  Onaylıyorsan 'evet' yaz: " a; [[ "$a" == evet ]] || exit 0
   [[ -f "$CDIR/docker-compose.yml" ]] && DC --profile demo --profile daily --profile fable \
-    --profile swap --profile extras --profile stt down -v 2>/dev/null || true
+    --profile swap --profile canvas --profile extras --profile stt down -v 2>/dev/null || true
   detect_docker; dk ps -aq --filter name=sk- | xargs -r $DKR rm -f 2>/dev/null || true
   # NemoClaw kabını, OpenShell gateway'ini ve CLI'sini kendi kaldırıcısı siler.
   if have nemoclaw; then
@@ -193,6 +196,7 @@ $( ((WITH_FABLE)) && echo "    ${B}fable${R}   ~67 GB  :8001   Nemotron-3-Super-
 $( ((WITH_EXTRAS)) && echo "    ${B}ekstra${R}   Open WebUI + Qdrant + Whisper                       :3000" )
 $( ((WITH_WIKI))   && echo "    ${B}vault${R}    Obsidian + claude-obsidian (15 skill)" )
 $( ((WITH_SWAP))   && echo "    ${B}swap${R}     llama-swap — katmanı istek anında açar, boştayı düşürür" )
+$( ((WITH_CANVAS)) && echo "    ${B}canvas${R}   Agent Canvas — ajan kontrol merkezi + otomasyonlar   :8300" )
 $( ((WITH_NEMOCLAW)) && echo "    ${B}nemoclaw${R} NVIDIA NemoClaw — ajan OpenShell kabında, model kapıdan" )
 
   ${B}İNDİRME${R}  $( ((DEMO)) && echo "~45 GB" || { ((WITH_FABLE)) && echo "~132 GB" || echo "~65 GB"; } )
@@ -340,7 +344,8 @@ send
 
 # ── 2 DOSYA DÜZENİ ──────────────────────────────────────────────────────────
 sbegin 2
-mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,webui,qdrant} "$CDIR" "$AI_ROOT/bin"
+mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,webui,qdrant,canvas} \
+         "$CDIR" "$AI_ROOT/bin"
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
 if [[ ! -f "$ENVF" ]]; then cp "$SRC_DIR/.env.example" "$ENVF"; fi
 sed -i "s|^HF_TOKEN=.*|HF_TOKEN=$HF_TOKEN|; s|^AI_ROOT=.*|AI_ROOT=$AI_ROOT|" "$ENVF"
@@ -348,6 +353,24 @@ grep -q '^VLLM_IMAGE=' "$ENVF" || echo "VLLM_IMAGE=ghcr.io/aeon-7/aeon-vllm-ulti
 # llama-swap sokete root olmadan erişsin diye host'un docker grup kimliği
 DOCKER_GID="$(getent group docker | cut -d: -f3)"; DOCKER_GID="${DOCKER_GID:-999}"
 sed -i '/^DOCKER_GID=/d' "$ENVF"; echo "DOCKER_GID=$DOCKER_GID" >> "$ENVF"
+
+# Agent Canvas: kabı senin kullanıcı kimliğinle çalıştırıyoruz. Alternatifi,
+# proje klasörünü kabın kullanıcısına devretmekti — o da senin kendi
+# dosyalarına erişimini bozardı.
+sed -i '/^CANVAS_UID=/d;/^CANVAS_GID=/d' "$ENVF"
+printf 'CANVAS_UID=%s\nCANVAS_GID=%s\n' "$(id -u)" "$(id -g)" >> "$ENVF"
+grep -q '^CANVAS_PROJECTS=' "$ENVF" \
+  || echo "CANVAS_PROJECTS=${CANVAS_PROJECTS:-$HOME/projects}" >> "$ENVF"
+# Vault yolu burada kesinleşir (bilgi tabanı adımı çok sonra geliyor) çünkü
+# Canvas kabı onu salt-okunur bağlıyor ve compose'un yolu şimdiden bilmesi gerek.
+VAULT_PATH="${OBSIDIAN_VAULT:-$HOME/vault}"
+sed -i '/^OBSIDIAN_VAULT=/d' "$ENVF"; echo "OBSIDIAN_VAULT=$VAULT_PATH" >> "$ENVF"
+mkdir -p "$VAULT_PATH"
+# Ayarları ve sırları şifreleyen anahtar bir kez üretilir; kaybolursa kayıtlı
+# kimlik bilgileri okunamaz hale gelir, o yüzden .env'de kalıcı tutuluyor.
+rnd(){ openssl rand -hex "${1:-32}" 2>/dev/null || head -c"${1:-32}" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+grep -q '^OH_SECRET_KEY=' "$ENVF" || echo "OH_SECRET_KEY=$(rnd 32)" >> "$ENVF"
+grep -q '^CANVAS_KEY='    "$ENVF" || echo "CANVAS_KEY=$(rnd 24)"    >> "$ENVF"
 chmod 600 "$ENVF"
 set -a; source "$ENVF"; set +a
 sudo install -m0755 "$SRC_DIR/spark" /usr/local/bin/spark
@@ -375,6 +398,13 @@ if (( WITH_SWAP )); then
       && chmod +x "$AI_ROOT/bin/docker" && ok "docker CLI indirildi" \
       || die "statik docker CLI indirilemedi — .env içinde DOCKER_CLI_VERSION dene"
   fi
+fi
+if (( WITH_CANVAS )); then
+  CANVAS_IMG="ghcr.io/openhands/agent-canvas:${CANVAS_TAG:-1.19.0}"
+  spin "indiriliyor: ${CANVAS_IMG##*/}" dk pull "$CANVAS_IMG" && ok "${CANVAS_IMG##*/}" \
+    || die "Agent Canvas imajı indirilemedi: $CANVAS_IMG"
+  mkdir -p "${CANVAS_PROJECTS:-$HOME/projects}"
+  ok "proje klasörü: ${CANVAS_PROJECTS:-$HOME/projects}  (ajan yalnız burayı görür)"
 fi
 ((WITH_EXTRAS)) && for img in ghcr.io/open-webui/open-webui:main qdrant/qdrant:latest; do
   spin "indiriliyor: ${img##*/}" dk pull "$img" || warn "$img indirilemedi"; done
@@ -533,7 +563,7 @@ if (( WITH_SWAP )); then
     || die "model konteynerleri oluşturulamadı"
   ok "konteynerler hazır ve kapalı — açmayı llama-swap üstlenecek"
   DC --profile swap up -d || die "kapı ve llama-swap açılmadı"
-  wait_http http://127.0.0.1:8080/health 180 llama-swap || die "llama-swap açılmadı — spark logs llamaswap"
+  wait_http "http://127.0.0.1:${SWAP_PORT:-8081}/health" 180 llama-swap || die "llama-swap açılmadı — spark logs llamaswap"
   wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
   # İlk istek ısınmayı beklemesin diye ana katmanı burada açıyoruz. Claude Code
   # kendi zaman aşımına takılmasın diye bu bekleme kuruluma alındı.
@@ -556,6 +586,22 @@ else
     log "   bellek: $(gpumem)"
   done
   wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
+fi
+if (( WITH_CANVAS )); then
+  CP="${CANVAS_PORT:-8300}"
+  if DC --profile canvas up -d >>"$LOGFILE" 2>&1; then
+    t=0
+    # Kök yol SPA döndürüyor; 2xx/3xx/404 hepsi "ayakta" demek, 000 değil.
+    until [[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$CP/canvas" 2>/dev/null)" != 000 ]]; do
+      sleep 5; t=$((t+5)); printf '\r  %s│%s ⏳ Agent Canvas açılıyor… %ss' "$D" "$R" "$t"
+      (( t >= 180 )) && break
+    done
+    printf '\r\033[K'
+    ok "Agent Canvas: http://localhost:$CP/canvas"
+    log "   panel anahtarı (.env içinde CANVAS_KEY): ${CANVAS_KEY:-üretildi}"
+  else
+    warn "Agent Canvas açılmadı — spark logs canvas"
+  fi
 fi
 ((WITH_EXTRAS)) && { DC --profile extras up -d && ok "Open WebUI: http://localhost:3000" || warn "ekstralar açılmadı"; }
 send
@@ -757,7 +803,7 @@ WIKIEOF
       ok "vault MCP eklendi — her projede notlarına erişebilirsin"
     else warn "vault MCP eklenemedi"; fi
 
-    echo "OBSIDIAN_VAULT=$VAULT" >> "$ENVF"
+    sed -i '/^OBSIDIAN_VAULT=/d' "$ENVF"; echo "OBSIDIAN_VAULT=$VAULT" >> "$ENVF"
     log "kullanım:  wiki  ·  wiki \"soru\"  ·  obsidian  ·  kaynak at: $VAULT/inbox/"
   fi
 fi
@@ -870,6 +916,18 @@ cat <<FIN
                ${D}Qwen kalite · ciddi kod · varsayılan · :8888${R}
       fable    ${FABLE_REPO}
                ${D}NVIDIA ağır · spark up fable (diğerlerini kapatır) · :8001${R}
+
+  ${B}AGENT CANVAS${R}  (--with-canvas veya --all ile kurulduysa)
+      http://localhost:${CANVAS_PORT:-8300}/canvas
+      ${D}panel anahtarı: .env içindeki CANVAS_KEY${R}
+
+      İlk açılışta Settings → LLM'e bir kez şunları gir (env ile ayarlanamıyor):
+        Model     litellm_proxy/${FALLBACK_MAIN}
+        Base URL  http://litellm:4000
+        API Key   ${LITELLM_KEY:-sk-spark}
+
+      Claude Code'u alt ajan yapmak için: Settings → Agent → Preset: Claude Code
+      ${D}kap zaten bizim kapıya bakıyor (ANTHROPIC_BASE_URL), abonelik token'ı verme${R}
 
   ${B}KATMAN DEĞİŞİMİ${R}  (--with-swap veya --all ile kurulduysa)
       claude içinde /model fable        katman istek anında açılır

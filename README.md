@@ -83,6 +83,8 @@ bash install.sh --all       # dört katman + eklentiler ~132 GB    50-70 dk
 | `--with-wiki` | Obsidian + claude-obsidian bilgi tabanı |
 | `--with-nemoclaw` | NVIDIA NemoClaw ajan kabı (`--all` içinde) |
 | `--with-swap` | llama-swap: katmanı istek anında aç (`--all` içinde) |
+| `--with-canvas` | Agent Canvas ajan kontrol merkezi (`--all` içinde) |
+| `--projects PATH` | Canvas ajanının göreceği klasör (varsayılan `~/projects`) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--resume` | Yarım kalan kurulumu sürdür |
 | `--status` / `--uninstall` | Durum / kaldırma |
@@ -112,6 +114,8 @@ Son adımda konteynerden `nvidia-smi` çalıştırılarak GPU erişimi fiilen do
 ```bash
 spark status                # servis durumu, bellek, disk
 spark swap                  # llama-swap: hangi katman ayakta
+spark canvas                # Agent Canvas adresi ve ayarları
+spark up canvas             # kontrol merkezini aç
 spark up swap               # llama-swap düzenini aç
 spark up demo               # haiku + sonnet
 spark up daily              # haiku + sonnet + opus
@@ -139,7 +143,31 @@ spark down                  # tümünü durdur
 | Skill'ler | Superpowers (TDD, sistematik hata ayıklama, plan çıkarma) |
 | Bilgi tabanı | Obsidian + claude-obsidian (15 skill) — `--with-wiki` |
 | Ajan kabı | NVIDIA NemoClaw + OpenShell, model yerel kapıdan — `--with-nemoclaw` |
+| Kontrol merkezi | Agent Canvas: konuşmalar, otomasyonlar, ACP alt ajanları — `--with-canvas` |
 | Ekstralar | Open WebUI, Qdrant, Whisper — `--with-extras` |
+
+---
+
+## Portlar
+
+Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra kendiliğinden ağa açılmaz.
+
+| Port | Servis | Ne zaman açılır | Değiştir |
+|---|---|---|---|
+| `4000` | **LiteLLM kapı** — tek API adresi | her zaman | `GATEWAY_BIND` |
+| `8002` | `haiku` (vLLM) | `demo`, `daily` | — |
+| `8000` | `sonnet` (vLLM) | `demo`, `daily` | — |
+| `8888` | `opus` (vLLM) | `daily` | — |
+| `8001` | `fable` (vLLM) | `fable` | — |
+| `8081` | llama-swap durum ucu | `--with-swap` | `SWAP_PORT` |
+| `8300` | Agent Canvas paneli | `--with-canvas` | `CANVAS_PORT`, `CANVAS_BIND` |
+| `8080` | NemoClaw OpenShell gateway | `--with-nemoclaw` | NemoClaw yönetir |
+| `18789` | NemoClaw paneli | `--with-nemoclaw` | NemoClaw atar |
+| `3000` | Open WebUI | `--with-extras` | `WEBUI_BIND` |
+| `6333` | Qdrant | `--with-extras` | — |
+| `9000` | Whisper | `stt` profili | — |
+
+İki tanesi bilerek kaydırıldı. Agent Canvas kendi içinde 8000 dinler ama o portu `sonnet` kullandığı için dışarı 8300'den açılır. llama-swap da 8080 yerine 8081'e alındı, çünkü 8080 NemoClaw'ın OpenShell gateway'inin varsayılanı — `--all` ile ikisi birden kurulduğunda çakışırlardı.
 
 ---
 
@@ -207,6 +235,31 @@ LITELLM_KEY=<uzun-bir-anahtar>
 `spark up daily` ile yeniden başlatılır. İstemci tarafında: OpenAI uyumlu uç `http://<spark-ip>:4000/v1`, model adı `opus`. Claude Code için `ANTHROPIC_BASE_URL=http://<spark-ip>:4000`.
 
 Ofis dışı erişim için Tailscale önerilir — port açmayı ve sabit IP'yi gerektirmez.
+
+---
+
+## Agent Canvas — ajan kontrol merkezi
+
+`--with-canvas` (ya da `--all`) ile [Agent Canvas](https://github.com/OpenHands/OpenHands) kurulur: konuşmalar, dosyalar, terminal, model ayarları ve otomasyonlar tek panelden yönetilir. Otomasyonlar webhook ve zamanlayıcıyla tetiklenir — PR incelemesi, depo gözcüsü gibi işleri buraya kurarsın.
+
+```bash
+spark up canvas    # aç
+spark canvas       # adres, panel anahtarı, girilecek ayarlar
+```
+
+Panel `http://localhost:8300/canvas` adresinde (kendi portu 8000 ama onu `sonnet` kullanıyor).
+
+**Ajan kabın içinde koşar**, makinenin dosya sistemini görmez; yalnızca `/projects` altına bağladığımız klasörü görür (varsayılan `~/projects`, `--projects PATH` ile değiştirilir). `docker.sock` gerekmez, `--privileged` gerekmez.
+
+**Claude Code'u alt ajan yapabilirsin.** Settings → Agent → Preset: Claude Code. Sarmalayıcı imajın içinde hazır; kap zaten bizim kapıya bakacak şekilde kurulu:
+
+```
+Agent Canvas  →  Claude Code (ACP)  →  LiteLLM :4000  →  yerel katman
+```
+
+İki not. Model ayarı **env değişkeniyle yapılamıyor** — ilk açılışta Settings → LLM'e bir kez elle girilir (`spark canvas` tam olarak ne yazacağını gösterir): Model `litellm_proxy/opus`, Base URL `http://litellm:4000`, API Key `.env` içindeki `LITELLM_KEY`. İkincisi, Claude aboneliğinin OAuth token'ı bu kuruluma **verilmez**: üst akış belgeleri, `ANTHROPIC_BASE_URL` ile birlikte kullanıldığında token'ın kimlik doğrulamasının bozulduğunu söylüyor. Ya abonelik ya yerel kapı; burada tercih yerel kapı.
+
+Ayrıntılı tasarım ve ajan rolleri: **[docs/MIMARI.md](docs/MIMARI.md)**
 
 ---
 
@@ -278,6 +331,7 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 | vLLM (GB10 derlemesi) | `ghcr.io/aeon-7/aeon-vllm-ultimate` |
 | LiteLLM | `ghcr.io/berriai/litellm` |
 | llama-swap | `ghcr.io/mostlygeek/llama-swap` (`unified-cuda13`, arm64) |
+| Agent Canvas | `ghcr.io/openhands/agent-canvas` (`1.19.0`, arm64) |
 | MCP sunucuları | `mcp/*` Docker kataloğu |
 | Skill kütüphanesi | `obra/superpowers` |
 | Bilgi tabanı | `AgriciDaniel/claude-obsidian` |

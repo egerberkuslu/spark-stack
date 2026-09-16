@@ -6,6 +6,7 @@
 #     daily  → haiku + sonnet + opus     ~65 GB   normal kullanım
 #     fable  → fable tek başına         ~105 GB   en yüksek kalite
 #     swap   → llama-swap                        katmanı istek anında açar
+#     canvas → Agent Canvas                      ajan kontrol merkezi, otomasyonlar
 #     extras → webui + qdrant                     ekip arayüzü, doküman arama
 #     stt    → whisper                            ses → yazı
 #
@@ -44,7 +45,7 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: sk-litellm
-    profiles: [demo, daily, fable, swap, extras]
+    profiles: [demo, daily, fable, swap, canvas, extras]
     restart: unless-stopped
     ports: ["${GATEWAY_BIND:-127.0.0.1}:4000:4000"]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -56,6 +57,42 @@ services:
       interval: 15s
       timeout: 5s
       retries: 20
+
+  # ── Agent Canvas · ajan kontrol merkezi ───────────────────────────────────
+  #  OpenHands deposunun bugünkü hali. Konuşmalar, otomasyonlar (webhook +
+  #  zamanlayıcı), dosyalar ve terminal tek yerden yönetilir.
+  #
+  #  Üç ayrıntı:
+  #   1) Ajan bu kabın içinde koşar; makinenin dosya sistemini görmez, yalnız
+  #      /projects altına bağladığımız klasörü görür. docker.sock GEREKMEZ.
+  #   2) Claude Code, ACP alt ajanı olarak kabın içinde çalışabiliyor (sarmalayıcı
+  #      imajda hazır geliyor). Onu da bizim kapımıza bağlıyoruz: ANTHROPIC_BASE_URL
+  #      + ANTHROPIC_API_KEY. Abonelik OAuth token'ı BİLEREK verilmiyor — üst
+  #      akış belgeleri, base URL ile token'ın birlikte kullanılamayacağını söylüyor.
+  #   3) Kendi portu 8000, ama bizde 8000'i sonnet kullanıyor; dışarı CANVAS_PORT'tan
+  #      açılır.
+  canvas:
+    image: ghcr.io/openhands/agent-canvas:${CANVAS_TAG:-1.19.0}
+    container_name: sk-canvas
+    profiles: [canvas]
+    restart: unless-stopped
+    user: "${CANVAS_UID:-1000}:${CANVAS_GID:-1000}"
+    ports: ["${CANVAS_BIND:-127.0.0.1}:${CANVAS_PORT:-8300}:8000"]
+    environment:
+      OH_SECRET_KEY: ${OH_SECRET_KEY:-}
+      LOCAL_BACKEND_API_KEY: ${CANVAS_KEY:-}
+      AGENT_CANVAS_DISABLE_TELEMETRY: ${CANVAS_TELEMETRY_OFF:-1}
+      # ACP alt ajanları (Claude Code) yerel kapıya baksın. Host'taki .bashrc
+      # bloğuyla aynı ikili: bazı sürümler API_KEY, bazıları AUTH_TOKEN okuyor.
+      ANTHROPIC_BASE_URL: http://litellm:4000
+      ANTHROPIC_API_KEY: ${LITELLM_KEY:-sk-spark}
+      ANTHROPIC_AUTH_TOKEN: ${LITELLM_KEY:-sk-spark}
+    volumes:
+      - ${AI_ROOT:-/srv/ai}/data/canvas:/home/openhands/.openhands
+      - ${CANVAS_PROJECTS:-/srv/ai/data/projects}:/projects
+      # Bilgi tabanı SALT OKUNUR: ajan notlara bakabilsin ama silemesin.
+      # Vault'a yazma, insanın onayladığı "wiki" akışında kalır.
+      - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}:/vault:ro
 
   # ── llama-swap · talep-güdümlü katman değişimi ────────────────────────────
   #  Kapı ile model sunucuları arasına girer. İstek bir katmana geldiğinde o
@@ -77,8 +114,9 @@ services:
     restart: unless-stopped
     group_add: ["${DOCKER_GID:-999}"]
     # Yalnız makinenin kendisine açılır; kapı ona zaten ağ içinden ulaşıyor.
-    # Bu port sadece "spark swap" ve sağlık yoklaması için var.
-    ports: ["${SWAP_BIND:-127.0.0.1}:8080:8080"]
+    # Bu port sadece "spark swap" ve sağlık yoklaması için var. 8080 DEĞİL:
+    # NemoClaw'ın OpenShell gateway'i o portu kendi varsayılanı olarak kullanıyor.
+    ports: ["${SWAP_BIND:-127.0.0.1}:${SWAP_PORT:-8081}:8080"]
     volumes:
       - ${AI_ROOT:-/srv/ai}/compose/llamaswap.yaml:/etc/llama-swap/config/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
@@ -183,7 +221,7 @@ services:
     container_name: sk-webui
     profiles: [extras]
     restart: unless-stopped
-    ports: ["3000:8080"]
+    ports: ["${WEBUI_BIND:-127.0.0.1}:3000:8080"]
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
       OPENAI_API_BASE_URL: http://host.docker.internal:4000/v1
