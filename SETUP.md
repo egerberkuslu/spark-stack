@@ -143,6 +143,7 @@ bash install.sh --with-extras --resume     # Open WebUI + Qdrant + Whisper
 bash install.sh --with-nemoclaw --resume   # NemoClaw ajan kabı
 bash install.sh --with-swap --resume       # llama-swap ile talep-güdümlü katman
 bash install.sh --with-canvas --resume     # Agent Canvas kontrol merkezi
+bash install.sh --with-a2a --resume        # A2A köprüsü (roller protokolle açılır)
 ```
 
 ---
@@ -225,6 +226,34 @@ Panel: `http://localhost:8300/canvas` — kendi portu 8000 ama onu `sonnet` kull
 Claude Code'u alt ajan olarak çalıştırmak için **Settings → Agent → Preset: Claude Code**. Kap zaten yerel kapıya bakacak şekilde kurulu (`ANTHROPIC_BASE_URL`). Claude aboneliğinin OAuth token'ını buraya girme — base URL ile birlikte çalışmıyor.
 
 Proje klasörünü değiştirmek için `--projects ~/kod`.
+
+---
+
+## A2A köprüsü — rolleri protokolle açmak
+
+`--with-a2a` (veya `--all`) ile roller [Agent2Agent](https://github.com/a2aproject/A2A)
+protokolüyle dışarı açılır. Canvas'ın kendi devri tek süreç içinde kalır; bu köprü sayesinde
+başka bir süreçteki ya da başka makinedeki bir ajan rolleri keşfedip görev verebilir.
+
+```bash
+spark a2a                                        # kart ve roller
+curl localhost:8400/.well-known/agent-card.json  # keşif
+```
+
+Bir role doğrudan görev vermek:
+
+```bash
+curl -s localhost:8400/agents/spark-kod/a2a/v1 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage",
+       "params":{"message":{"role":"ROLE_USER","parts":[{"text":"toplama fonksiyonu yaz"}]}}}'
+```
+
+Köprü her isteği karşılarken `kurallar/` altındaki dosyaları sistem istemine ekler; uzaktan
+gelen görev de şirket kurallarına bağlı kalır.
+
+Başka makineden çağıracaksan `.env` içinde `A2A_BIND=0.0.0.0` ve `A2A_BASE_URL`'i gerçek
+adresle güncelle. Köprüde kimlik doğrulama yok, o yüzden ağa açarken kapı gibi düşün.
 
 ---
 

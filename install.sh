@@ -13,6 +13,7 @@
 #    --with-nemoclaw     NVIDIA NemoClaw ajan kabı (--all dahil)              #
 #    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
 #    --with-canvas       Agent Canvas ajan kontrol merkezi (--all dahil)      #
+#    --with-a2a          A2A köprüsü: rolleri protokolle aç (--all dahil)     #
 #    --vault PATH        vault yolu (varsayılan ~/vault)                      #
 #    --resume            yarım kalan kurulumu sürdür                          #
 #    --status            servis durumu     --uninstall   tümünü kaldır        #
@@ -29,7 +30,7 @@ AI_ROOT="${AI_ROOT:-/srv/ai}"
 MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
-WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0; WITH_CANVAS=0
+WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0; WITH_CANVAS=0; WITH_A2A=0
 RESUME=0; MODE=install; DEMO=0
 TIERS=(haiku sonnet opus)          # varsayılan kurulum katmanları
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-}"
@@ -139,18 +140,19 @@ DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
   --demo) DEMO=1; TIERS=(haiku sonnet) ;;
-  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1; WITH_CANVAS=1 ;;
+  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1; WITH_CANVAS=1; WITH_A2A=1 ;;
   --with-fable) WITH_FABLE=1 ;; --with-extras) WITH_EXTRAS=1 ;;
   --with-nemoclaw) WITH_NEMOCLAW=1 ;; --no-nemoclaw) WITH_NEMOCLAW=0 ;;
   --with-swap) WITH_SWAP=1 ;; --no-swap) WITH_SWAP=0 ;;
   --with-canvas) WITH_CANVAS=1 ;; --no-canvas) WITH_CANVAS=0 ;;
+  --with-a2a) WITH_A2A=1 ;; --no-a2a) WITH_A2A=0 ;;
   --projects) shift; CANVAS_PROJECTS="${1:-}" ;; --projects=*) CANVAS_PROJECTS="${1#--projects=}" ;;
   --sandbox) shift; NEMOCLAW_SANDBOX="${1:-spark}" ;; --sandbox=*) NEMOCLAW_SANDBOX="${1#--sandbox=}" ;;
   --with-wiki) WITH_WIKI=1 ;; --vault) shift; OBSIDIAN_VAULT="${1:-}"; WITH_WIKI=1 ;;
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,18p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,19p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
@@ -160,7 +162,7 @@ if [[ "$MODE" == uninstall ]]; then
   printf '\n%s  Silinecek: tüm konteynerler + %s (modeller dahil)%s\n' "$YLW" "$AI_ROOT" "$R"
   read -rp "  Onaylıyorsan 'evet' yaz: " a; [[ "$a" == evet ]] || exit 0
   [[ -f "$CDIR/docker-compose.yml" ]] && DC --profile demo --profile daily --profile fable \
-    --profile swap --profile canvas --profile extras --profile stt down -v 2>/dev/null || true
+    --profile swap --profile canvas --profile a2a --profile extras --profile stt down -v 2>/dev/null || true
   detect_docker; dk ps -aq --filter name=sk- | xargs -r $DKR rm -f 2>/dev/null || true
   # NemoClaw kabını, OpenShell gateway'ini ve CLI'sini kendi kaldırıcısı siler.
   if have nemoclaw; then
@@ -197,6 +199,7 @@ $( ((WITH_EXTRAS)) && echo "    ${B}ekstra${R}   Open WebUI + Qdrant + Whisper  
 $( ((WITH_WIKI))   && echo "    ${B}vault${R}    Obsidian + claude-obsidian (15 skill)" )
 $( ((WITH_SWAP))   && echo "    ${B}swap${R}     llama-swap — katmanı istek anında açar, boştayı düşürür" )
 $( ((WITH_CANVAS)) && echo "    ${B}canvas${R}   Agent Canvas — ajan kontrol merkezi + otomasyonlar   :8300" )
+$( ((WITH_A2A))    && echo "    ${B}a2a${R}      A2A köprüsü — roller protokolle adreslenebilir      :8400" )
 $( ((WITH_NEMOCLAW)) && echo "    ${B}nemoclaw${R} NVIDIA NemoClaw — ajan OpenShell kabında, model kapıdan" )
 
   ${B}İNDİRME${R}  $( ((DEMO)) && echo "~45 GB" || { ((WITH_FABLE)) && echo "~132 GB" || echo "~65 GB"; } )
@@ -347,6 +350,7 @@ sbegin 2
 mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,webui,qdrant,canvas} \
          "$CDIR" "$AI_ROOT/bin"
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
+[[ -f "$SRC_DIR/a2a/server.py" ]] && cp "$SRC_DIR/a2a/server.py" "$CDIR/a2a-server.py"
 if [[ ! -f "$ENVF" ]]; then cp "$SRC_DIR/.env.example" "$ENVF"; fi
 sed -i "s|^HF_TOKEN=.*|HF_TOKEN=$HF_TOKEN|; s|^AI_ROOT=.*|AI_ROOT=$AI_ROOT|" "$ENVF"
 grep -q '^VLLM_IMAGE=' "$ENVF" || echo "VLLM_IMAGE=ghcr.io/aeon-7/aeon-vllm-ultimate:latest" >> "$ENVF"
@@ -627,6 +631,16 @@ JSON
     fi
   else
     warn "Agent Canvas açılmadı — spark logs canvas"
+  fi
+fi
+if (( WITH_A2A )); then
+  AP="${A2A_PORT:-8400}"
+  if DC --profile a2a up -d >>"$LOGFILE" 2>&1 && wait_http "http://127.0.0.1:$AP/health" 90 "A2A köprüsü"; then
+    A2AR="$(curl -sf --max-time 10 "http://127.0.0.1:$AP/health" 2>/dev/null | jq -r '.roles|join(", ")' 2>/dev/null)"
+    ok "A2A köprüsü: http://localhost:$AP/.well-known/agent-card.json"
+    log "   protokolle açılan roller: ${A2AR:-?}"
+  else
+    warn "A2A köprüsü açılmadı — spark logs a2a"
   fi
 fi
 ((WITH_EXTRAS)) && { DC --profile extras up -d && ok "Open WebUI: http://localhost:3000" || warn "ekstralar açılmadı"; }
@@ -995,6 +1009,11 @@ cat <<FIN
 
       Claude Code'u alt ajan yapmak için: Settings → Agent → Preset: Claude Code
       ${D}kap zaten bizim kapıya bakıyor (ANTHROPIC_BASE_URL), abonelik token'ı verme${R}
+
+  ${B}A2A KÖPRÜSÜ${R}  (--with-a2a veya --all ile kurulduysa)
+      curl localhost:${A2A_PORT:-8400}/.well-known/agent-card.json
+      ${D}roller protokolle adreslenebilir; başka makineden de çağrılabilir${R}
+      spark a2a                        kartı ve rolleri göster
 
   ${B}KATMAN DEĞİŞİMİ${R}  (--with-swap veya --all ile kurulduysa)
       claude içinde /model fable        katman istek anında açılır

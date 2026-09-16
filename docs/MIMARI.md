@@ -129,12 +129,29 @@ modeli kapıya bağlar. Yazdım demekle yetinmez: ayarı geri okur ve gerçekten
 doğrular, olmazsa uyarıp elle yapılacak adımı yazar. `spark canvas` da bu değeri her çağrıda
 canlı okur.
 
-### Neyin olmadığını da yazalım
+### Tek sürecin dışına: A2A köprüsü
 
-**A2A yok.** OpenHands deposunda `a2a` araması sıfır sonuç veriyor; NemoClaw'da da yok. Devir,
-standart bir ajan-ajan protokolü üzerinden değil, SDK'nın kendi devir kaydı üzerinden ve tek
-süreç içinde olur. Ajanların ayrı makinelerde birbirini bulması gerektiğinde gereken şey
-budur ve bu mimaride bulunmuyor.
+Canvas'ın devir mekanizması tek süreç içinde çalışır. Ajanların ayrı süreçlerde, ayrı
+makinelerde birbirini bulabilmesi için standart bir ajan-ajan protokolü gerekir ve yığındaki
+hiçbir parça onu kendiliğinden konuşmuyor: OpenHands deposunda `a2a` araması sıfır sonuç
+veriyor, NemoClaw'da da yok. Bu yüzden protokolü rollerin önüne bir köprü koyuyor.
+
+`--with-a2a` ile kurulan köprü rolleri [Agent2Agent](https://github.com/a2aproject/A2A)
+protokolüyle yayınlar. Keşif `/.well-known/agent-card.json` adresinde (RFC 8615), gövde
+JSON-RPC 2.0, metotlar `SendMessage`, `GetTask`, `ListTasks`, `CancelTask`. Bütün roller tek
+kartta beceri olarak listelenir, ayrıca her rolün kendi kartı ve kendi uç noktası vardır.
+
+Üç tasarım kararı önemli. Birincisi, köprü rol tanımlarını **aynı tek kaynaktan** okur; ayrı
+bir kopya tutmaz, dolayısıyla rol değişince protokolden görünen de değişir. İkincisi, her
+isteği karşılarken kuralları sistem isteminin içine ekler — uzaktan gelen bir görev de şirket
+kurallarına bağlı kalır, çünkü kuralı okumak çağıranın insafına bırakılmamıştır. Üçüncüsü,
+yalnız standart kütüphane kullanır: `python:3.12-alpine` imajı doğrudan koşar, kurulum adımı,
+bağımlılık ve derleme yoktur.
+
+Sınırı da yazalım: köprü akış (streaming) ve itme bildirimi (push notification) sunmuyor,
+kartında ikisini de `false` olarak bildiriyor. Görevler bellekte tutuluyor, yani köprü yeniden
+başlarsa geçmiş görev kayıtları gider — çalışan bir iş değil, yalnızca sorgulanabilir kayıt
+kaybolur.
 
 **Proje kökündeki `AGENTS.md` otomatik okunmuyor.** Kaynak kodda o ad yalnızca dosya
 listesinin sıralama önceliğinde geçiyor, yani arayüz meselesi. Sözleşmeyi taşıyan şey rol
@@ -153,6 +170,7 @@ gerçeği gösterir; boş hücre eksiklik değil, bilinçli sınırdır.
 | Agent Canvas yerleşik ajanı | canvas kabı | `litellm_proxy/...` → `litellm:4000` | yalnız `/projects` | `/vault`, salt okunur | yok |
 | Claude Code (Canvas içinde, ACP) | canvas kabı | `ANTHROPIC_BASE_URL` → `litellm:4000` | yalnız `/projects` | `/vault`, salt okunur | yok |
 | NemoClaw ajanı | OpenShell kabı | `inference.local` → :4000 | kabın kendi alanı | yok | yok |
+| A2A köprüsü (uzak çağrı) | a2a kabı | doğrudan `litellm:4000` | yok | `/vault/kurallar`, salt okunur | yok |
 
 Üç şeyi açıklamak gerekiyor.
 

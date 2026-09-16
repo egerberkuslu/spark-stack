@@ -2,11 +2,12 @@
 # =============================================================================
 #  spark — spark-stack yönetim komutu (her şey Docker)
 #
-#    spark up [demo|daily|fable|swap|canvas|extras|stt]  servisleri aç (varsayılan: daily)
+#    spark up [demo|daily|fable|swap|canvas|a2a|extras|stt]  servisleri aç (varsayılan: daily)
 #    spark down                          hepsini kapat
 #    spark status                        ne çalışıyor, bellek, disk
 #    spark swap                          llama-swap durumu: hangi katman ayakta
 #    spark canvas                        Agent Canvas adresi ve panel anahtarı
+#    spark a2a                           A2A köprüsü: kart ve roller
 #    spark logs [servis]                 canlı log
 #    spark pull <sonnet|opus|fable>      model ağırlığı indir (konteynerle)
 #    spark models                        katman → model eşlemesi ve durum
@@ -31,6 +32,7 @@ port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;
 alive()   { curl -sf "http://127.0.0.1:$(port_of "$1")/${2:-v1/models}" >/dev/null 2>&1; }
 swap_on()   { $DKR ps --filter name=sk-llamaswap --filter status=running -q 2>/dev/null | grep -q .; }
 canvas_on() { $DKR ps --filter name=sk-canvas    --filter status=running -q 2>/dev/null | grep -q .; }
+a2a_on()    { $DKR ps --filter name=sk-a2a       --filter status=running -q 2>/dev/null | grep -q .; }
 
 # GB10'da "nvidia-smi --query-gpu=memory.*" çoğu sürümde "Not Supported" döner:
 # bellek GPU'ya ayrılmış değil, CPU ile ortak. O durumda /proc/meminfo'ya düşeriz.
@@ -60,6 +62,10 @@ case "${1:-status}" in
 
   up)
     PROFILE="${2:-daily}"
+    if [[ "$PROFILE" == "a2a" ]]; then
+      $DC --profile a2a up -d || exit 1
+      exec "$0" a2a
+    fi
     if [[ "$PROFILE" == "canvas" ]]; then
       $DC --profile canvas up -d || exit 1
       echo ">> Agent Canvas açılıyor"
@@ -97,7 +103,7 @@ case "${1:-status}" in
     ;;
 
   down)
-    $DC --profile demo --profile daily --profile fable --profile swap --profile canvas --profile extras --profile stt down
+    $DC --profile demo --profile daily --profile fable --profile swap --profile canvas --profile a2a --profile extras --profile stt down
     echo "kapatıldı"
     ;;
 
@@ -163,6 +169,31 @@ case "${1:-status}" in
     printf '\n'
     ;;
 
+  a2a)
+    AP="${A2A_PORT:-8400}"
+    if ! a2a_on; then
+      echo "A2A köprüsü çalışmıyor."
+      echo "  kur:  bash install.sh --with-a2a --resume"
+      echo "  aç :  spark up a2a"
+      exit 1
+    fi
+    printf '\n  %sA2A köprüsü%s  ·  roller protokolle adreslenebilir\n\n' "$B" "$R"
+    printf '    kart   http://localhost:%s/.well-known/agent-card.json\n' "$AP"
+    CARD="$(curl -sf --max-time 10 "http://127.0.0.1:$AP/.well-known/agent-card.json" 2>/dev/null)"
+    if [[ -z "$CARD" ]]; then
+      echo "    (kart okunamadı — spark logs a2a)"
+    else
+      printf '    sürüm  A2A %s\n\n' "$(echo "$CARD" | jq -r .protocolVersion)"
+      echo "$CARD" | jq -r '.skills[] | "    \(.id)"' | while read -r l; do
+        printf '  %s%s%s\n' "$G" "$l" "$R"; done
+      printf '\n    örnek:\n'
+      printf '      curl -s localhost:%s/agents/spark-kod/a2a/v1 \\\n' "$AP"
+      printf "        -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"SendMessage\","
+      printf "\"params\":{\"message\":{\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"...\"}]}}}'\n"
+    fi
+    printf '\n'
+    ;;
+
   status)
     printf '\n  %sspark-stack%s\n\n' "$B" "$R"
     repo_of() { local v="${1^^}_REPO"; echo "${!v:-?}"; }
@@ -182,6 +213,9 @@ case "${1:-status}" in
     fi
     if canvas_on; then
       printf '  %-9s %sÇALIŞIYOR%s  http://localhost:%s/canvas\n' "canvas" "$G" "$R" "${CANVAS_PORT:-8300}"
+    fi
+    if a2a_on; then
+      printf '  %-9s %sÇALIŞIYOR%s  http://localhost:%s/.well-known/agent-card.json\n' "a2a" "$G" "$R" "${A2A_PORT:-8400}"
     fi
     printf '\n  Bellek      : %s\n' "$(memread)"
     printf '  Modeller    : %s\n' "$(du -sh "$AI_ROOT/models" 2>/dev/null | cut -f1)"
@@ -231,7 +265,7 @@ case "${1:-status}" in
       | jq -r '.choices[0].message.content // .error.message'
     ;;
 
-  update) $DC --profile daily --profile fable --profile swap --profile canvas --profile extras pull ;;
+  update) $DC --profile daily --profile fable --profile swap --profile canvas --profile a2a --profile extras pull ;;
 
-  *) sed -n '4,15p' "$0" | sed 's/^# \?//' ;;
+  *) sed -n '4,16p' "$0" | sed 's/^# \?//' ;;
 esac

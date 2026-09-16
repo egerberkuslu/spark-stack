@@ -84,6 +84,7 @@ bash install.sh --all       # dört katman + eklentiler ~132 GB    50-70 dk
 | `--with-nemoclaw` | NVIDIA NemoClaw ajan kabı (`--all` içinde) |
 | `--with-swap` | llama-swap: katmanı istek anında aç (`--all` içinde) |
 | `--with-canvas` | Agent Canvas ajan kontrol merkezi (`--all` içinde) |
+| `--with-a2a` | A2A köprüsü: rolleri protokolle aç (`--all` içinde) |
 | `--projects PATH` | Canvas ajanının göreceği klasör (varsayılan `~/projects`) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--resume` | Yarım kalan kurulumu sürdür |
@@ -115,6 +116,7 @@ Son adımda konteynerden `nvidia-smi` çalıştırılarak GPU erişimi fiilen do
 spark status                # servis durumu, bellek, disk
 spark swap                  # llama-swap: hangi katman ayakta
 spark canvas                # Agent Canvas adresi ve ayarları
+spark a2a                   # A2A köprüsü: kart ve roller
 spark up canvas             # kontrol merkezini aç
 spark up swap               # llama-swap düzenini aç
 spark up demo               # haiku + sonnet
@@ -144,6 +146,7 @@ spark down                  # tümünü durdur
 | Bilgi tabanı | Obsidian + claude-obsidian (15 skill) — `--with-wiki` |
 | Ajan kabı | NVIDIA NemoClaw + OpenShell, model yerel kapıdan — `--with-nemoclaw` |
 | Kontrol merkezi | Agent Canvas: konuşmalar, otomasyonlar, ACP alt ajanları — `--with-canvas` |
+| A2A köprüsü | Rolleri Agent2Agent protokolüyle dışarı açar — `--with-a2a` |
 | Ekstralar | Open WebUI, Qdrant, Whisper — `--with-extras` |
 
 ---
@@ -161,6 +164,7 @@ Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra ke
 | `8001` | `fable` (vLLM) | `fable` | — |
 | `8081` | llama-swap durum ucu | `--with-swap` | `SWAP_PORT` |
 | `8300` | Agent Canvas paneli | `--with-canvas` | `CANVAS_PORT`, `CANVAS_BIND` |
+| `8400` | A2A köprüsü | `--with-a2a` | `A2A_PORT`, `A2A_BIND` |
 | `8080` | NemoClaw OpenShell gateway | `--with-nemoclaw` | NemoClaw yönetir |
 | `18789` | NemoClaw paneli | `--with-nemoclaw` | NemoClaw atar |
 | `3000` | Open WebUI | `--with-extras` | `WEBUI_BIND` |
@@ -272,11 +276,26 @@ canlı okuyup gösterir, yani "açık sanıyordum" durumu olmaz.
 
 Kuralları düzenlemek için dosyaları doğrudan aç, ya da `wiki` komutuyla bilgi tabanında çalış.
 
-İki dürüst sınır. Proje kökündeki `AGENTS.md` insan içindir; Canvas onu **otomatik okumaz**
-(kaynak kodda yalnızca dosya listesi sıralamasında geçiyor), sözleşmeyi taşıyan şey rol
-dosyalarının kendisidir. İkincisi, roller arasındaki devir **A2A değildir**: OpenHands
-deposunda `a2a` araması sıfır sonuç veriyor, NemoClaw'da da yok. Devir tek makinede, tek
-konuşma içinde, SDK'nın kendi devir kaydı üzerinden olur. Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
+### Roller protokolle de adreslenebilir
+
+Canvas'ın kendi devir mekanizması tek süreç içinde çalışır. Bunun dışına çıkmak için
+`--with-a2a` ile bir **A2A köprüsü** kurulur: roller [Agent2Agent](https://github.com/a2aproject/A2A)
+protokolüyle dışarı açılır, yani başka bir süreçteki ya da başka makinedeki bir ajan onları
+keşfedip görev verebilir.
+
+```bash
+curl localhost:8400/.well-known/agent-card.json      # keşif
+spark a2a                                            # kart ve roller
+```
+
+Keşif `/.well-known/agent-card.json`, gövde JSON-RPC 2.0, metotlar `SendMessage`, `GetTask`,
+`ListTasks`, `CancelTask`. Her rolün ayrıca kendi kartı var (`/agents/spark-kod/...`). Köprü
+her isteği karşılarken kuralları sistem istemine ekler, yani **uzaktan gelen görev de şirket
+kurallarına bağlı kalır**. Bağımlılığı yok, standart kütüphaneyle çalışıyor.
+
+Dürüst bir not: OpenHands'in kendisi A2A konuşmuyor (depoda `a2a` araması sıfır sonuç),
+NemoClaw da konuşmuyor. Protokolü rollerin önüne bu köprü koyuyor.
+Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
 
 ---
 

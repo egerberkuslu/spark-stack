@@ -7,6 +7,7 @@
 #     fable  → fable tek başına         ~105 GB   en yüksek kalite
 #     swap   → llama-swap                        katmanı istek anında açar
 #     canvas → Agent Canvas                      ajan kontrol merkezi, otomasyonlar
+#     a2a    → A2A köprüsü                        rolleri protokolle dışarı açar
 #     extras → webui + qdrant                     ekip arayüzü, doküman arama
 #     stt    → whisper                            ses → yazı
 #
@@ -45,7 +46,7 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: sk-litellm
-    profiles: [demo, daily, fable, swap, canvas, extras]
+    profiles: [demo, daily, fable, swap, canvas, a2a, extras]
     restart: unless-stopped
     ports: ["${GATEWAY_BIND:-127.0.0.1}:4000:4000"]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -93,6 +94,34 @@ services:
       # Bilgi tabanı SALT OKUNUR: ajan notlara bakabilsin ama silemesin.
       # Vault'a yazma, insanın onayladığı "wiki" akışında kalır.
       - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}:/vault:ro
+
+  # ── A2A köprüsü · rolleri protokolle dışarı aç ────────────────────────────
+  #  Roller (spark-kod/test/denetci) Agent2Agent protokolüyle adreslenebilir
+  #  hale gelir: keşif /.well-known/agent-card.json, gövde JSON-RPC 2.0.
+  #  Böylece başka bir süreçteki ya da başka makinedeki bir ajan, SDK'ya bağlı
+  #  kalmadan role görev verebilir.
+  #
+  #  Rol tanımı ve kurallar tek kaynaktan salt okunur bağlanır; sunucu her
+  #  istekte kuralları sistem istemine ekler, yani uzaktan gelen görev de
+  #  şirket kurallarına bağlı kalır. Bağımlılık yok, stdlib ile çalışır.
+  a2a:
+    image: python:3.12-alpine
+    container_name: sk-a2a
+    profiles: [a2a]
+    restart: unless-stopped
+    ports: ["${A2A_BIND:-127.0.0.1}:${A2A_PORT:-8400}:8400"]
+    environment:
+      A2A_ROLES_DIR: /roles
+      A2A_RULES_DIR: /vault/kurallar
+      A2A_GATEWAY_URL: http://litellm:4000/v1
+      A2A_GATEWAY_KEY: ${LITELLM_KEY:-sk-spark}
+      A2A_PORT: "8400"
+      A2A_BASE_URL: ${A2A_BASE_URL:-http://localhost:8400}
+    command: ["python", "/srv/server.py"]
+    volumes:
+      - ${AI_ROOT:-/srv/ai}/compose/a2a-server.py:/srv/server.py:ro
+      - ${AI_ROOT:-/srv/ai}/data/canvas/agents:/roles:ro
+      - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}/kurallar:/vault/kurallar:ro
 
   # ── llama-swap · talep-güdümlü katman değişimi ────────────────────────────
   #  Kapı ile model sunucuları arasına girer. İstek bir katmana geldiğinde o
