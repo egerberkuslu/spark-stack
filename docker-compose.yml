@@ -94,6 +94,10 @@ services:
       # Bilgi tabanı SALT OKUNUR: ajan notlara bakabilsin ama silemesin.
       # Vault'a yazma, insanın onayladığı "wiki" akışında kalır.
       - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}:/vault:ro
+      # Kurallar ayrıca kullanıcı skill'i olarak bağlanır: tetikleyicisiz .md
+      # dosyaları sistem istemine HER konuşmada tam metin giriyor. Yani kuralı
+      # okumak ajanın insafına kalmıyor. Bütün vault değil, yalnız kurallar.
+      - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}/kurallar:/home/openhands/.agents/skills:ro
 
   # ── A2A köprüsü · rolleri protokolle dışarı aç ────────────────────────────
   #  Roller (spark-kod/test/denetci) Agent2Agent protokolüyle adreslenebilir

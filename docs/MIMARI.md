@@ -133,8 +133,11 @@ canlı okur.
 
 Canvas'ın devir mekanizması tek süreç içinde çalışır. Ajanların ayrı süreçlerde, ayrı
 makinelerde birbirini bulabilmesi için standart bir ajan-ajan protokolü gerekir ve yığındaki
-hiçbir parça onu kendiliğinden konuşmuyor: OpenHands deposunda `a2a` araması sıfır sonuç
-veriyor, NemoClaw'da da yok. Bu yüzden protokolü rollerin önüne bir köprü koyuyor.
+hiçbir parça onu kendiliğinden konuşmuyor. OpenHands v1.19.0 kaynağında A2A'ya dair tek
+eşleşme yok; SDK'da açık ama birleşmemiş bir PR var ve o da yalnız sunucu kipini kapsıyor,
+istemci tarafı kapsam dışı bırakılmış. NemoClaw ise A2A'yı etkin biçimde kapatıyor: bir yama
+Hermes'in A2A araçlarını söküyor ve imaj derlemesi bunun gerçekten sökülmüş olduğunu
+doğruluyor. Bu yüzden protokolü rollerin önüne bir köprü koyuyor.
 
 `--with-a2a` ile kurulan köprü rolleri [Agent2Agent](https://github.com/a2aproject/A2A)
 protokolüyle yayınlar. Keşif `/.well-known/agent-card.json` adresinde (RFC 8615), gövde
@@ -148,14 +151,25 @@ kurallarına bağlı kalır, çünkü kuralı okumak çağıranın insafına bı
 yalnız standart kütüphane kullanır: `python:3.12-alpine` imajı doğrudan koşar, kurulum adımı,
 bağımlılık ve derleme yoktur.
 
+Metot adlandırması iki sürüm arasında değişti: spesifikasyon v1.0'da `SendMessage`, v0.3'te
+`message/send`. Köprü ikisini de kabul ediyor, çünkü sahadaki istemciler bölünmüş durumda ve
+birini reddetmek uyumluluk kazandırmaz.
+
 Sınırı da yazalım: köprü akış (streaming) ve itme bildirimi (push notification) sunmuyor,
 kartında ikisini de `false` olarak bildiriyor. Görevler bellekte tutuluyor, yani köprü yeniden
 başlarsa geçmiş görev kayıtları gider — çalışan bir iş değil, yalnızca sorgulanabilir kayıt
 kaybolur.
 
-**Proje kökündeki `AGENTS.md` otomatik okunmuyor.** Kaynak kodda o ad yalnızca dosya
-listesinin sıralama önceliğinde geçiyor, yani arayüz meselesi. Sözleşmeyi taşıyan şey rol
-dosyalarının gövdesi ve kural skill'idir; `AGENTS.md` insanın okuması için duruyor.
+**Kural yükleme üç koldan sağlama alındı.** Birincisi rol dosyalarının gövdesi, ikincisi
+proje kökündeki `AGENTS.md` — SDK bunu `agents` adlı bir skill'e çevirip tetikleyicisiz
+yüklüyor, yani tam metin her konuşmanın sistem istemine giriyor. Üçüncüsü `kurallar/`
+klasörünün Canvas kabına kullanıcı skill'i olarak bağlanması (`~/.agents/skills`, salt
+okunur): tetikleyicisi olmayan `.md` dosyaları da tam metin yükleniyor. Üçü birden olduğu
+için kuralı okumak ajanın insafına kalmıyor.
+
+Küçük ama önemli bir ayrıntı: `CLAUDE.md` de tanınıyor ama model ailesi Anthropic değilse
+eleniyor. Yerel modellerle çalıştığımız için sözleşme `AGENTS.md` adında duruyor; o hiçbir
+modele göre elenmez.
 
 ---
 

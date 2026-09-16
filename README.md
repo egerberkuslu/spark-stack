@@ -262,6 +262,12 @@ eskimez. Bir kuralı vault'ta değiştirdiğinde bütün ajanlar o an yeni kural
 | `spark-test` | test yazar ve **çalıştırır** | kodu düzeltmez, geri devreder |
 | `spark-denetci` | denetler, PR açıklaması hazırlar | kod yazmaz, **birleştirmez** |
 
+**Kurallar her konuşmada zorunlu olarak yüklenir.** Canvas kabına `kurallar/` klasörü ayrıca
+kullanıcı skill'i olarak bağlanır (`~/.agents/skills`, salt okunur). Tetikleyicisi olmayan
+`.md` dosyaları sistem istemine tam metin girer, yani kuralı okumak ajanın insafına kalmaz.
+Aynı şey proje kökündeki `AGENTS.md` için de geçerli: hem Claude Code hem Canvas onu
+kendiliğinden okur ve içeriği tam metin olarak sistem istemine koyar.
+
 **Aynı roller iki tarafta da çalışır.** Kurulum tek kaynaktan iki sürüm üretir: host'taki
 Claude Code için `~/.claude/agents/`, Agent Canvas için `/srv/ai/data/canvas/agents/` (kabın
 içinde `~/.openhands/agents/`). Canvas her konuşma başlarken bu dizini kendiliğinden tarayıp
@@ -293,8 +299,14 @@ Keşif `/.well-known/agent-card.json`, gövde JSON-RPC 2.0, metotlar `SendMessag
 her isteği karşılarken kuralları sistem istemine ekler, yani **uzaktan gelen görev de şirket
 kurallarına bağlı kalır**. Bağımlılığı yok, standart kütüphaneyle çalışıyor.
 
-Dürüst bir not: OpenHands'in kendisi A2A konuşmuyor (depoda `a2a` araması sıfır sonuç),
-NemoClaw da konuşmuyor. Protokolü rollerin önüne bu köprü koyuyor.
+Köprü hem güncel (`SendMessage`, `GetTask`) hem eski (`message/send`, `tasks/get`) metot
+adlandırmasını kabul ediyor; sahadaki istemciler iki sürüm arasında bölünmüş durumda ve
+reddetmek uyumluluk kazandırmaz.
+
+Dürüst bir not: OpenHands'in kendisi A2A konuşmuyor (v1.19.0 kaynağında sıfır eşleşme; SDK'da
+açık ama birleşmemiş bir PR var), NemoClaw ise etkin biçimde kapatıyor (`a2a-neutral.patch`
+A2A araçlarını sökerken imaj derlemesinde bir doğrulama da koyuyor). Protokolü rollerin önüne
+bu köprü koyuyor.
 Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
 
 ---

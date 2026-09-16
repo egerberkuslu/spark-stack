@@ -1,9 +1,11 @@
 # Bu depoda çalışan ajanlar için
 
-Bu dosya projenin köküne konur ve **insanın okuması içindir**: sözleşmenin özetini bir yerde
-toplar. Ajanlara kuralı taşıyan şey bu dosya değil, rol dosyalarının gövdesi ve
-`sirket-kurallari` skill'idir — Agent Canvas proje kökündeki `AGENTS.md`'yi otomatik okumaz.
-Claude Code okur.
+Bu dosya projenin köküne konur ve **hem Claude Code hem Agent Canvas tarafından
+kendiliğinden okunur**: içeriği tam metin olarak sistem istemine girer, tetikleyici
+gerekmez. Yani hangi ajan çalışırsa çalışsın aynı sözleşmeye bağlanır.
+
+Adı bilerek `AGENTS.md`: `CLAUDE.md` de okunuyor ama yalnız Anthropic ailesinden bir model
+kullanılıyorsa; `AGENTS.md` hiçbir modele göre elenmiyor.
 
 ## Kurallar bilgi tabanında
 

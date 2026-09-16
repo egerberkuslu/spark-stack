@@ -197,7 +197,10 @@ olursa uyarır; o zaman panelden Settings → Agent → Sub-agents ve Settings �
 
 `spark canvas` bu ayarları canlı okur, kurulu rolleri modelleriyle listeler.
 
-`~/projects/AGENTS.md` insanın okuması için konur; Canvas onu otomatik okumaz.
+`~/projects/AGENTS.md` da kurulur ve **hem Claude Code hem Canvas onu kendiliğinden okur**;
+içeriği tam metin olarak sistem istemine girer. Ayrıca `kurallar/` klasörü Canvas kabına
+kullanıcı skill'i olarak bağlanır (`~/.agents/skills`), böylece kurallar her konuşmada
+zorunlu olarak yüklenir.
 
 Kuralı değiştirmek için dosyayı doğrudan aç. Tek kaynak olduğu için, kaydettiğin an bütün
 ajanlar yeni kurala bağlanır; yeniden kurulum gerekmez.

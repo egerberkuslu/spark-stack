@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-PROTOCOL_VERSION = "0.3"
+PROTOCOL_VERSION = "1.0"
 JSONRPC = "2.0"
 
 ROLES_DIR = Path(os.environ.get("A2A_ROLES_DIR", "/roles"))
@@ -321,6 +321,16 @@ class JsonRpcError(Exception):
         self.message = message
 
 
+# Spesifikasyon v1.0'da metotlar "SendMessage", v0.3'te "message/send" yazılıyordu
+# ve sahadaki istemciler ikiye bölünmüş durumda. İkisini de kabul ediyoruz;
+# reddetmek uyumluluk kazandırmaz, yalnız çağıranı kırar.
+ALIASES = {
+    "message/send": "SendMessage",
+    "tasks/get": "GetTask",
+    "tasks/list": "ListTasks",
+    "tasks/cancel": "CancelTask",
+}
+
 METHODS = {
     "SendMessage": None,  # rol bilgisi gerektiği için ayrı ele alınır
     "GetTask": handle_get_task,
@@ -396,7 +406,7 @@ class Handler(BaseHTTPRequestHandler):
             )
 
         rid = req.get("id")
-        method = req["method"]
+        method = ALIASES.get(req["method"], req["method"])
         params = req.get("params") or {}
         roles = load_roles()
 
