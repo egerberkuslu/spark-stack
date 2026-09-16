@@ -30,6 +30,19 @@ port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;
 alive()   { curl -sf "http://127.0.0.1:$(port_of "$1")/${2:-v1/models}" >/dev/null 2>&1; }
 swap_on() { $DKR ps --filter name=sk-llamaswap --filter status=running -q 2>/dev/null | grep -q .; }
 
+# GB10'da "nvidia-smi --query-gpu=memory.*" çoğu sürümde "Not Supported" döner:
+# bellek GPU'ya ayrılmış değil, CPU ile ortak. O durumda /proc/meminfo'ya düşeriz.
+memread() {
+  local out
+  out="$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null | head -1)"
+  if [[ -n "$out" && "$out" != *"Not Supported"* && "$out" != *"[N/A]"* ]]; then
+    echo "$out"; return
+  fi
+  awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2}
+       END{ if(t>0) printf "%.1f / %.1f GiB (birleşik bellek)", (t-a)/1048576, t/1048576; else print "?" }' \
+      /proc/meminfo 2>/dev/null || echo "?"
+}
+
 wait_ready() {  # wait_ready <katman> <saniye> [yol]
   local n=$1 to=${2:-1800} p=${3:-v1/models} t=0
   local rv="${n^^}_REPO"; [[ -n "${!rv:-}" ]] && echo "   $n = ${!rv}"
@@ -103,8 +116,7 @@ case "${1:-status}" in
         echo "  şu an ayakta katman yok — ilk istekte açılacak"
       fi
     fi
-    printf '\n  GPU belleği : %s\n\n' \
-      "$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null || echo ?)"
+    printf '\n  Bellek      : %s\n\n' "$(memread)"
     ;;
 
   status)
@@ -124,7 +136,7 @@ case "${1:-status}" in
     if swap_on; then
       printf '  %-9s %sÇALIŞIYOR%s  katmanlar istek anında açılıyor · ayrıntı: spark swap\n' "swap" "$G" "$R"
     fi
-    printf '\n  GPU belleği : %s\n' "$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null || echo ?)"
+    printf '\n  Bellek      : %s\n' "$(memread)"
     printf '  Modeller    : %s\n' "$(du -sh "$AI_ROOT/models" 2>/dev/null | cut -f1)"
     printf '  Konteynerler:\n'
     $DKR ps --filter name=sk- --format '    {{.Names}}  {{.Status}}' 2>/dev/null

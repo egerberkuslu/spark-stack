@@ -214,6 +214,7 @@ Mevcut bir Obsidian vault'un varsa script `adopt` akışını kullanır ve içer
 | İndirme takıldı | Ctrl+C → `bash install.sh --resume`. Sürmezse `.env` içindeki `HF_WORKERS` değerini 4'e düşür. |
 | Model anlamsız karakter üretiyor | `.env` içinde `VLLM_NVFP4_GEMM_BACKEND=marlin` olduğunu doğrula |
 | Makine kilitlendi | Bellek taşmış. `.env` içindeki ilgili `*_MEM` değerini 0.05 düşür, `spark up daily` |
+| `spark status` bellek satırı "GiB (birleşik bellek)" diyor | Beklenen. GB10'da `nvidia-smi --query-gpu=memory.*` "Not Supported" döner; `spark` `/proc/meminfo`'ya düşer. |
 | Servis açılmıyor | `spark logs <katman>` |
 | `/model fable` dedim, Claude Code zaman aşımına düştü | Soğuk açılış 3-4 dk. Önce `spark ask "merhaba" fable` ile ısıt, sonra geç. |
 | `spark swap` "llama-swap çalışmıyor" diyor | `spark up swap`; hâlâ olmuyorsa `spark logs llamaswap` |

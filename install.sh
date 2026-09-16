@@ -110,7 +110,18 @@ detect_docker(){
   else DKR=""; fi
 }
 dk(){ $DKR "$@"; }
-gpumem(){ nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null || echo "?"; }
+# GB10'da "nvidia-smi --query-gpu=memory.*" çoğu sürümde "Not Supported" döner:
+# bellek GPU'ya ayrılmış değil, CPU ile ortak. O durumda /proc/meminfo'ya düşeriz.
+gpumem(){
+  local out
+  out="$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null | head -1)"
+  if [[ -n "$out" && "$out" != *"Not Supported"* && "$out" != *"[N/A]"* ]]; then
+    echo "$out"; return
+  fi
+  awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2}
+       END{ if(t>0) printf "%.1f / %.1f GiB (birleşik bellek)", (t-a)/1048576, t/1048576; else print "?" }' \
+      /proc/meminfo 2>/dev/null || echo "?"
+}
 
 # Katman → gerçek model. Her adımda bu isimler ekrana yazılır ki hangi katmanın
 # hangi modeli çalıştırdığı hiçbir noktada belirsiz kalmasın.

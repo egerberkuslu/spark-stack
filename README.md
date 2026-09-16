@@ -151,6 +151,8 @@ Spark'ta 128 GB bellek CPU ve GPU arasında paylaşılır. Sığmayan bir model 
 
 `spark status` çıktısında kullanım 120 GB'yi geçmemeli. Geçerse `/srv/ai/compose/.env` içindeki ilgili `*_MEM` değeri 0.05 düşürülüp `spark up daily` çalıştırılır.
 
+GB10'da `nvidia-smi --query-gpu=memory.*` çoğu sürümde `Not Supported` döner: bellek GPU'ya ayrılmış değil, CPU ile ortaktır. `spark` bunu görünce `/proc/meminfo` üzerinden okur, o yüzden `Bellek` satırı kimi makinede GiB cinsinden birleşik kullanım gösterir. Ölçtüğün sayı aynı sayıdır, yalnızca kaynağı değişir.
+
 `gpu_memory_utilization` toplamı 0.75'in üzerine çıkarılmamalı; topluluk raporlarında 0.8 üstü değerler kilitlenmeye yol açıyor.
 
 ---
@@ -184,6 +186,8 @@ Kurulum bittiğinde ana katman bir kez ısıtılır, böylece ilk gerçek isteğ
 llama-swap'in Docker API istemcisi yok — komutu düz `exec` ediyor. Bu yüzden konteynere hem `docker.sock` hem de statik `docker` CLI ikilisi bağlanıyor ve konteyner host'un `docker` grubuna alınıyor. Soketi görebilen bir konteyner pratikte makinede root demektir; makineyi ekibe açıyorsan bunu bilerek yap.
 
 llama-swap'te kimlik doğrulama yok. Bu yüzden `SWAP_BIND` varsayılan olarak `127.0.0.1`; kapı (LiteLLM) ona ağ içinden `llamaswap:8080` ile ulaştığı için dışarı açmaya gerek de yok. Ekibe açarken açman gereken tek şey kapının kendisi.
+
+**Grup kuralı hakkında bir uyarı.** Aynı yığını kuran bir topluluk deposu grup kuralını kapatmış; gerekçesi, beklenmedik model değişimlerinin ölçüm koşularını bozmasıydı. Bizde grup kuralı asıl işi yapan şey (üç katmanın birlikte durabilmesi onunla mümkün), o yüzden açık bırakıldı. Uzun bir karşılaştırma koşusu yapacaksan `/srv/ai/compose/llamaswap.yaml` içindeki `routing:` bloğunu kaldır — llama-swap o zaman tek model kuralına döner, katmanlar birbirini beklemez ama aynı anda yalnız biri ayakta kalır.
 
 ---
 
