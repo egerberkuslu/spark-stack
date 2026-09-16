@@ -2,9 +2,10 @@
 # =============================================================================
 #  spark — spark-stack yönetim komutu (her şey Docker)
 #
-#    spark up [demo|daily|fable|extras|stt]  servisleri aç (varsayılan: daily)
+#    spark up [demo|daily|fable|swap|extras|stt]  servisleri aç (varsayılan: daily)
 #    spark down                          hepsini kapat
 #    spark status                        ne çalışıyor, bellek, disk
+#    spark swap                          llama-swap durumu: hangi katman ayakta
 #    spark logs [servis]                 canlı log
 #    spark pull <sonnet|opus|fable>      model ağırlığı indir (konteynerle)
 #    spark models                        katman → model eşlemesi ve durum
@@ -25,13 +26,14 @@ DC="$DKR compose --env-file $AI_ROOT/compose/.env -f $AI_ROOT/compose/docker-com
 
 B=$'\033[1m'; D=$'\033[2m'; G=$'\033[1;32m'; R=$'\033[0m'
 
-port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; gateway) echo 4000;; esac; }
+port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; gateway) echo 4000;; swap) echo 8080;; esac; }
 alive()   { curl -sf "http://127.0.0.1:$(port_of "$1")/${2:-v1/models}" >/dev/null 2>&1; }
+swap_on() { $DKR ps --filter name=sk-llamaswap --filter status=running -q 2>/dev/null | grep -q .; }
 
-wait_ready() {  # wait_ready <katman> <saniye>
-  local n=$1 to=${2:-1800} t=0
+wait_ready() {  # wait_ready <katman> <saniye> [yol]
+  local n=$1 to=${2:-1800} p=${3:-v1/models} t=0
   local rv="${n^^}_REPO"; [[ -n "${!rv:-}" ]] && echo "   $n = ${!rv}"
-  while ! alive "$n"; do
+  while ! alive "$n" "$p"; do
     sleep 5; t=$((t+5))
     printf '\r  ⏳ %s açılıyor… %ss %s(ilk açılışta GPU çekirdekleri derlenir)%s' "$n" "$t" "$D" "$R"
     (( t >= to )) && { printf '\n  ✖ %s açılmadı — spark logs %s\n' "$n" "$n"; return 1; }
@@ -43,6 +45,17 @@ case "${1:-status}" in
 
   up)
     PROFILE="${2:-daily}"
+    # llama-swap düzeni: konteynerler kapalı oluşturulur, açmayı llama-swap üstlenir
+    if [[ "$PROFILE" == "swap" ]]; then
+      echo ">> model konteynerleri oluşturuluyor (kapalı)"
+      $DC --profile demo --profile daily --profile fable create >/dev/null 2>&1 || true
+      echo ">> kapı + llama-swap açılıyor"
+      $DC --profile swap up -d || exit 1
+      wait_ready swap 180 health || exit 1
+      curl -sf http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1 \
+        && echo "  ✓ kapı hazır" || echo "  ! kapı henüz hazır değil"
+      exec "$0" swap
+    fi
     # Bellek çakışmasını önle: fable ile daily aynı anda olamaz
     if [[ "$PROFILE" == "fable" ]]; then
       echo ">> haiku/sonnet/opus kapatılıyor (fable tüm belleği ister)"
@@ -64,8 +77,34 @@ case "${1:-status}" in
     ;;
 
   down)
-    $DC --profile demo --profile daily --profile fable --profile extras --profile stt down
+    $DC --profile demo --profile daily --profile fable --profile swap --profile extras --profile stt down
     echo "kapatıldı"
+    ;;
+
+  swap)
+    if ! swap_on; then
+      echo "llama-swap çalışmıyor."
+      echo "  kur:  bash install.sh --with-swap --resume"
+      echo "  aç :  spark up swap"
+      exit 1
+    fi
+    printf '\n  %sllama-swap%s  ·  katman istek anında açılır\n\n' "$B" "$R"
+    OUT="$(curl -sf --max-time 10 http://127.0.0.1:8080/running 2>/dev/null || true)"
+    if [[ -z "$OUT" ]]; then
+      echo "  (llama-swap cevap vermedi — spark logs llamaswap)"
+    elif ! echo "$OUT" | jq -e . >/dev/null 2>&1; then
+      echo "$OUT" | sed 's/^/  /'
+    else
+      # Çıktı biçimi sürümle değişebiliyor; model adını nerede bulursa oradan al.
+      NAMES="$(echo "$OUT" | jq -r '[.. | objects | (.model // .id // .name) | select(type=="string")] | unique | .[]' 2>/dev/null)"
+      if [[ -n "$NAMES" ]]; then
+        while IFS= read -r m; do printf '    %s✓%s %s\n' "$G" "$R" "$m"; done <<<"$NAMES"
+      else
+        echo "  şu an ayakta katman yok — ilk istekte açılacak"
+      fi
+    fi
+    printf '\n  GPU belleği : %s\n\n' \
+      "$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null || echo ?)"
     ;;
 
   status)
@@ -82,6 +121,9 @@ case "${1:-status}" in
       && printf '  %-9s %sÇALIŞIYOR%s  http://localhost:4000\n' "kapı" "$G" "$R" \
       || printf '  %-9s %skapalı%s\n' "kapı" "$D" "$R"
     curl -sf http://127.0.0.1:3000 >/dev/null 2>&1 && printf '  %-9s %sÇALIŞIYOR%s  http://localhost:3000\n' "webui" "$G" "$R"
+    if swap_on; then
+      printf '  %-9s %sÇALIŞIYOR%s  katmanlar istek anında açılıyor · ayrıntı: spark swap\n' "swap" "$G" "$R"
+    fi
     printf '\n  GPU belleği : %s\n' "$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null || echo ?)"
     printf '  Modeller    : %s\n' "$(du -sh "$AI_ROOT/models" 2>/dev/null | cut -f1)"
     printf '  Konteynerler:\n'
@@ -130,7 +172,7 @@ case "${1:-status}" in
       | jq -r '.choices[0].message.content // .error.message'
     ;;
 
-  update) $DC --profile daily --profile fable --profile extras pull ;;
+  update) $DC --profile daily --profile fable --profile swap --profile extras pull ;;
 
-  *) sed -n '4,13p' "$0" | sed 's/^# \?//' ;;
+  *) sed -n '4,14p' "$0" | sed 's/^# \?//' ;;
 esac

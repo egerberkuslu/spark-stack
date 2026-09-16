@@ -78,6 +78,7 @@ bash install.sh --all       # dört katman + eklentiler ~132 GB    50-70 dk
 | `--with-extras` | Open WebUI, Qdrant, Whisper |
 | `--with-wiki` | Obsidian + claude-obsidian bilgi tabanı |
 | `--with-nemoclaw` | NVIDIA NemoClaw ajan kabı (`--all` içinde) |
+| `--with-swap` | llama-swap: katmanı istek anında aç (`--all` içinde) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--resume` | Yarım kalan kurulumu sürdür |
 | `--status` / `--uninstall` | Durum / kaldırma |
@@ -106,6 +107,8 @@ Son adımda konteynerden `nvidia-smi` çalıştırılarak GPU erişimi fiilen do
 
 ```bash
 spark status                # servis durumu, bellek, disk
+spark swap                  # llama-swap: hangi katman ayakta
+spark up swap               # llama-swap düzenini aç
 spark up demo               # haiku + sonnet
 spark up daily              # haiku + sonnet + opus
 spark up fable              # yalnız fable
@@ -126,6 +129,7 @@ spark down                  # tümünü durdur
 |---|---|
 | Model katmanları | vLLM, NVFP4, Marlin backend, prefix caching, FP8 KV cache |
 | LiteLLM | Tek adres, Anthropic ↔ OpenAI çevirisi, katman fallback'i, kullanım logu |
+| llama-swap | Katmanı istek anında açar, çakışanı kapatır, boştayı düşürür — `--with-swap` |
 | Claude Code | Yerel kapıya bağlı; telemetri ve bulut erişimi kapalı |
 | MCP sunucuları | filesystem, git, fetch, context7, playwright, memory, sequential-thinking — hepsi konteyner |
 | Skill'ler | Superpowers (TDD, sistematik hata ayıklama, plan çıkarma) |
@@ -148,6 +152,38 @@ Spark'ta 128 GB bellek CPU ve GPU arasında paylaşılır. Sığmayan bir model 
 `spark status` çıktısında kullanım 120 GB'yi geçmemeli. Geçerse `/srv/ai/compose/.env` içindeki ilgili `*_MEM` değeri 0.05 düşürülüp `spark up daily` çalıştırılır.
 
 `gpu_memory_utilization` toplamı 0.75'in üzerine çıkarılmamalı; topluluk raporlarında 0.8 üstü değerler kilitlenmeye yol açıyor.
+
+---
+
+## Katman değişimi — llama-swap
+
+`--with-swap` (ya da `--all`) ile [llama-swap](https://github.com/mostlygeek/llama-swap) kapı ile model sunucuları arasına girer. `spark up fable` yazmaya gerek kalmaz: Claude Code içinde `/model fable` dersin, llama-swap çakışan katmanları kapatır, fable'ı açar, boşta kalanı süresi dolunca düşürür.
+
+![llama-swap ile katman değişimi](docs/figures/spark-llamaswap-dongu.png)
+
+```bash
+spark up swap     # llama-swap düzenini aç
+spark swap        # hangi katman ayakta, bellek ne durumda
+```
+
+Kurulum bittiğinde ana katman bir kez ısıtılır, böylece ilk gerçek isteğin beklemez.
+
+**Nasıl kurulu.** Konteynerleri compose oluşturur ama başlatmaz; llama-swap yalnızca `docker start` / `docker stop` eder. Böylece bütün vLLM bayrakları `docker-compose.yml` ve `.env` içinde tek yerde kalır, llama-swap tarafında kopyası olmaz. Grup kuralı belleğin gerçeğini yansıtır: `haiku + sonnet + opus` birlikte durur, `fable` açılınca üçü de düşer.
+
+| Ayar | Varsayılan | Ne yapar |
+|---|---|---|
+| `SWAP_TTL` | `1800` | Bir katman kaç saniye boşta kalınca düşer |
+| `SWAP_TTL_<KATMAN>` | — | Katman başına ayrı süre (`SWAP_TTL_FABLE=900`) |
+| `SWAP_HEALTH_TIMEOUT` | `2100` | İlk açılışta çekirdek derlemesi için tanınan süre |
+| `SWAP_BIND` | `127.0.0.1` | llama-swap'in dinlediği adres |
+
+**Üç dürüst not.**
+
+İlk açılış hâlâ 3-4 dakika sürüyor; llama-swap bunu ortadan kaldırmıyor, yalnızca ne zaman olacağına kendisi karar veriyor. Soğuk bir katmana ilk kez geçerken Claude Code kendi zaman aşımına takılabilir; o katmanı önce `spark ask "merhaba" fable` ile ısıtmak bu sorunu bitirir.
+
+llama-swap'in Docker API istemcisi yok — komutu düz `exec` ediyor. Bu yüzden konteynere hem `docker.sock` hem de statik `docker` CLI ikilisi bağlanıyor ve konteyner host'un `docker` grubuna alınıyor. Soketi görebilen bir konteyner pratikte makinede root demektir; makineyi ekibe açıyorsan bunu bilerek yap.
+
+llama-swap'te kimlik doğrulama yok. Bu yüzden `SWAP_BIND` varsayılan olarak `127.0.0.1`; kapı (LiteLLM) ona ağ içinden `llamaswap:8080` ile ulaştığı için dışarı açmaya gerek de yok. Ekibe açarken açman gereken tek şey kapının kendisi.
 
 ---
 
@@ -219,7 +255,8 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 
 ## Bilinen kısıtlar
 
-- Dört katman aynı anda çalışamaz; `fable` diğerlerini kapatır.
+- Dört katman aynı anda çalışamaz; `fable` diğerlerini kapatır. `--with-swap` bunu elle yapmaktan kurtarır ama fiziği değiştirmez.
+- Soğuk bir katmanın ilk açılışı 3-4 dakika sürer (GPU çekirdeği derlemesi); llama-swap bunu gizlemez.
 - NVFP4 çekirdekleri sm_121'de Marlin backend olmadan bozuk çıktı üretir.
 - Yoğun (dense) 70B+ modeller bu donanımda kullanılamaz (~2-5 tok/s).
 - Kullanılan vLLM imajı ve model reçeteleri topluluk tarafından sürdürülüyor; sürüm etiketleri `.env` içinde tek yerden güncellenir.
@@ -232,6 +269,7 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 |---|---|
 | vLLM (GB10 derlemesi) | `ghcr.io/aeon-7/aeon-vllm-ultimate` |
 | LiteLLM | `ghcr.io/berriai/litellm` |
+| llama-swap | `ghcr.io/mostlygeek/llama-swap` (`unified-cuda13`, arm64) |
 | MCP sunucuları | `mcp/*` Docker kataloğu |
 | Skill kütüphanesi | `obra/superpowers` |
 | Bilgi tabanı | `AgriciDaniel/claude-obsidian` |

@@ -11,6 +11,7 @@
 #    --with-extras       Open WebUI + Qdrant + Whisper                        #
 #    --with-wiki         Obsidian + claude-obsidian bilgi tabanı              #
 #    --with-nemoclaw     NVIDIA NemoClaw ajan kabı (--all dahil)              #
+#    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
 #    --vault PATH        vault yolu (varsayılan ~/vault)                      #
 #    --resume            yarım kalan kurulumu sürdür                          #
 #    --status            servis durumu     --uninstall   tümünü kaldır        #
@@ -27,7 +28,8 @@ AI_ROOT="${AI_ROOT:-/srv/ai}"
 MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
-WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; RESUME=0; MODE=install; DEMO=0
+WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0
+RESUME=0; MODE=install; DEMO=0
 TIERS=(haiku sonnet opus)          # varsayılan kurulum katmanları
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-}"
 NEMOCLAW_SANDBOX="${NEMOCLAW_SANDBOX:-spark}"   # NemoClaw kabının adı
@@ -125,15 +127,16 @@ DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
   --demo) DEMO=1; TIERS=(haiku sonnet) ;;
-  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1 ;;
+  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1 ;;
   --with-fable) WITH_FABLE=1 ;; --with-extras) WITH_EXTRAS=1 ;;
   --with-nemoclaw) WITH_NEMOCLAW=1 ;; --no-nemoclaw) WITH_NEMOCLAW=0 ;;
+  --with-swap) WITH_SWAP=1 ;; --no-swap) WITH_SWAP=0 ;;
   --sandbox) shift; NEMOCLAW_SANDBOX="${1:-spark}" ;; --sandbox=*) NEMOCLAW_SANDBOX="${1#--sandbox=}" ;;
   --with-wiki) WITH_WIKI=1 ;; --vault) shift; OBSIDIAN_VAULT="${1:-}"; WITH_WIKI=1 ;;
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,16p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,17p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
@@ -142,7 +145,8 @@ if [[ "$MODE" == uninstall ]]; then
   detect_docker
   printf '\n%s  Silinecek: tüm konteynerler + %s (modeller dahil)%s\n' "$YLW" "$AI_ROOT" "$R"
   read -rp "  Onaylıyorsan 'evet' yaz: " a; [[ "$a" == evet ]] || exit 0
-  [[ -f "$CDIR/docker-compose.yml" ]] && DC --profile daily --profile fable --profile extras --profile stt down -v 2>/dev/null || true
+  [[ -f "$CDIR/docker-compose.yml" ]] && DC --profile demo --profile daily --profile fable \
+    --profile swap --profile extras --profile stt down -v 2>/dev/null || true
   detect_docker; dk ps -aq --filter name=sk- | xargs -r $DKR rm -f 2>/dev/null || true
   # NemoClaw kabını, OpenShell gateway'ini ve CLI'sini kendi kaldırıcısı siler.
   if have nemoclaw; then
@@ -177,6 +181,7 @@ $( ((WITH_FABLE)) && echo "    ${B}fable${R}   ~67 GB  :8001   Nemotron-3-Super-
     ${B}kapı${R}     LiteLLM                   tek API adresi            :4000
 $( ((WITH_EXTRAS)) && echo "    ${B}ekstra${R}   Open WebUI + Qdrant + Whisper                       :3000" )
 $( ((WITH_WIKI))   && echo "    ${B}vault${R}    Obsidian + claude-obsidian (15 skill)" )
+$( ((WITH_SWAP))   && echo "    ${B}swap${R}     llama-swap — katmanı istek anında açar, boştayı düşürür" )
 $( ((WITH_NEMOCLAW)) && echo "    ${B}nemoclaw${R} NVIDIA NemoClaw — ajan OpenShell kabında, model kapıdan" )
 
   ${B}İNDİRME${R}  $( ((DEMO)) && echo "~45 GB" || { ((WITH_FABLE)) && echo "~132 GB" || echo "~65 GB"; } )
@@ -324,11 +329,14 @@ send
 
 # ── 2 DOSYA DÜZENİ ──────────────────────────────────────────────────────────
 sbegin 2
-mkdir -p "$MODELS/hf" "$DATA"/{cache-sonnet,cache-opus,cache-fable,webui,qdrant} "$CDIR"
+mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,webui,qdrant} "$CDIR" "$AI_ROOT/bin"
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
 if [[ ! -f "$ENVF" ]]; then cp "$SRC_DIR/.env.example" "$ENVF"; fi
 sed -i "s|^HF_TOKEN=.*|HF_TOKEN=$HF_TOKEN|; s|^AI_ROOT=.*|AI_ROOT=$AI_ROOT|" "$ENVF"
 grep -q '^VLLM_IMAGE=' "$ENVF" || echo "VLLM_IMAGE=ghcr.io/aeon-7/aeon-vllm-ultimate:latest" >> "$ENVF"
+# llama-swap sokete root olmadan erişsin diye host'un docker grup kimliği
+DOCKER_GID="$(getent group docker | cut -d: -f3)"; DOCKER_GID="${DOCKER_GID:-999}"
+sed -i '/^DOCKER_GID=/d' "$ENVF"; echo "DOCKER_GID=$DOCKER_GID" >> "$ENVF"
 chmod 600 "$ENVF"
 set -a; source "$ENVF"; set +a
 sudo install -m0755 "$SRC_DIR/spark" /usr/local/bin/spark
@@ -340,6 +348,23 @@ sbegin 3
 for img in "$VLLM_IMAGE" ghcr.io/berriai/litellm:main-latest; do
   spin "indiriliyor: ${img##*/}" dk pull "$img" && ok "${img##*/}" || die "imaj indirilemedi: $img"
 done
+if (( WITH_SWAP )); then
+  SWAP_IMG="ghcr.io/mostlygeek/llama-swap:${LLAMASWAP_TAG:-unified-cuda13}"
+  spin "indiriliyor: ${SWAP_IMG##*/}" dk pull "$SWAP_IMG" && ok "${SWAP_IMG##*/}" \
+    || die "llama-swap imajı indirilemedi: $SWAP_IMG"
+  # llama-swap'in Docker API istemcisi yok, komutu düz exec ediyor. Konteynerleri
+  # başlatabilmesi için statik docker CLI ikilisi imajın içine bağlanır.
+  if [[ -x "$AI_ROOT/bin/docker" ]]; then
+    ok "docker CLI hazır ($("$AI_ROOT/bin/docker" --version 2>/dev/null | head -1 || echo '?'))"
+  else
+    DCLI_VER="${DOCKER_CLI_VERSION:-28.5.1}"; DCLI_ARCH="$(uname -m)"
+    spin "statik docker CLI ($DCLI_VER · $DCLI_ARCH)" bash -c \
+      "curl -fsSL 'https://download.docker.com/linux/static/stable/$DCLI_ARCH/docker-$DCLI_VER.tgz' \
+       | tar -xz -C '$AI_ROOT/bin' --strip-components=1 docker/docker" \
+      && chmod +x "$AI_ROOT/bin/docker" && ok "docker CLI indirildi" \
+      || die "statik docker CLI indirilemedi — .env içinde DOCKER_CLI_VERSION dene"
+  fi
+fi
 ((WITH_EXTRAS)) && for img in ghcr.io/open-webui/open-webui:main qdrant/qdrant:latest; do
   spin "indiriliyor: ${img##*/}" dk pull "$img" || warn "$img indirilemedi"; done
 send
@@ -395,19 +420,26 @@ send
 #  Böylece "model bulunamadı" hatası yerine çalışan bir cevap gelir.
 sbegin 5
 FALLBACK_MAIN=opus; [[ " ${TIERS[*]} " == *" opus "* ]] || FALLBACK_MAIN=sonnet
+
+# Kapı katmanlara doğrudan mı bakacak, yoksa llama-swap üzerinden mi? Tek fark
+# adres: llama-swap varsa dört katman da onun arkasında, o da istek geldiğinde
+# ilgili konteyneri açıyor.
+tier_base(){
+  if (( WITH_SWAP )); then echo "http://llamaswap:8080/v1"
+  else echo "http://host.docker.internal:$(tier_port "$1")/v1"; fi
+}
 {
   echo "model_list:"
-  for spec in "haiku 8002" "sonnet 8000" "opus 8888" "fable 8001"; do
-    set -- $spec
+  for t in haiku sonnet opus fable; do
     cat <<YAML
-  - model_name: $1
-    litellm_params: {model: openai/$1, api_base: http://host.docker.internal:$2/v1, api_key: x}
+  - model_name: $t
+    litellm_params: {model: openai/$t, api_base: $(tier_base "$t"), api_key: x}
 YAML
   done
   cat <<YAML
   # Araçlar "claude-sonnet-4-5" gibi isimler gönderirse ana modele düşsün
   - model_name: "claude-*"
-    litellm_params: {model: openai/$FALLBACK_MAIN, api_base: http://host.docker.internal:$([[ $FALLBACK_MAIN == opus ]] && echo 8888 || echo 8000)/v1, api_key: x}
+    litellm_params: {model: openai/$FALLBACK_MAIN, api_base: $(tier_base "$FALLBACK_MAIN"), api_key: x}
 
 litellm_settings: {drop_params: true, modify_params: true, request_timeout: 900, num_retries: 1}
 router_settings:
@@ -418,6 +450,57 @@ router_settings:
 general_settings: {master_key: ${LITELLM_KEY:-sk-spark}}
 YAML
 } > "$CDIR/litellm.yaml"
+
+# ── llama-swap ayarı ────────────────────────────────────────────────────────
+#  Konteynerleri compose oluşturur, llama-swap yalnızca başlatıp durdurur:
+#  bütün vLLM bayrakları docker-compose.yml ve .env içinde tek yerde kalır.
+#  cmd düz exec edilir (kabuk yok), o yüzden komutlar tek satır ve sade.
+if (( WITH_SWAP )); then
+  SWAP_HEALTH="${SWAP_HEALTH_TIMEOUT:-2100}"   # ilk açılışta GPU çekirdeği derlenir
+  SWAP_UNLOAD="${SWAP_UNLOAD_TIMEOUT:-60}"     # durdurmanın bitmesini bekle
+  {
+    cat <<YAML
+# spark-stack — llama-swap ayarı (install.sh üretir; elle düzenleme, üzerine yazılır)
+healthCheckTimeout: $SWAP_HEALTH
+globalTTL: 0
+unloadTimeout: $SWAP_UNLOAD
+
+models:
+YAML
+    for t in haiku sonnet opus fable; do
+      ttl_var="SWAP_TTL_${t^^}"
+      cat <<YAML
+  $t:
+    cmd: docker start -a sk-$t
+    cmdStop: docker stop -t 30 sk-$t
+    proxy: http://$t:8000
+    checkEndpoint: /v1/models
+    ttl: ${!ttl_var:-${SWAP_TTL:-1800}}
+YAML
+    done
+    cat <<YAML
+
+# İlk üç katman birlikte durabilir; fable açılınca üçü de düşer, çünkü
+# birleşik bellekte ikisi aynı anda sığmaz.
+routing:
+  router:
+    use: group
+    settings:
+      groups:
+        gunluk:
+          swap: false
+          exclusive: true
+          members: [haiku, sonnet, opus]
+        agir:
+          swap: true
+          exclusive: true
+          members: [fable]
+YAML
+  } > "$CDIR/llamaswap.yaml"
+  ok "llama-swap ayarı yazıldı — katmanlar istek anında açılacak"
+  log "   ısınma payı ${SWAP_HEALTH}s · boşta düşme ${SWAP_TTL:-1800}s · kapı → llamaswap:8080"
+fi
+
 for t in haiku sonnet opus fable; do
   if [[ -f "$MODELS/$t/config.json" ]]; then
     ok "$t → $(tier_repo "$t")  :$(tier_port "$t")"
@@ -431,14 +514,38 @@ send
 #  Sıra: haiku (en hızlı açılan) → sonnet → opus. İlk ikisi açıldığında
 #  sistem zaten kullanılabilir; opus arkadan yetişir.
 sbegin 6
-PROFILE=daily; (( DEMO )) && PROFILE=demo
-DC --profile "$PROFILE" up -d || die "servisler açılmadı"
-for t in "${TIERS[@]}"; do
-  log "$t başlatılıyor — $(tier_repo "$t")"
-  wait_http "http://127.0.0.1:$(tier_port "$t")/v1/models" 1800 "$t" || die "$t açılmadı — spark logs $t"
+if (( WITH_SWAP )); then
+  # Konteynerler oluşturulur ama başlatılmaz; açma işini llama-swap üstlenir.
+  CREATE_PROFILES=(--profile demo --profile daily)
+  (( WITH_FABLE )) && CREATE_PROFILES+=(--profile fable)
+  spin "model konteynerleri oluşturuluyor (kapalı)" DC "${CREATE_PROFILES[@]}" create \
+    || die "model konteynerleri oluşturulamadı"
+  ok "konteynerler hazır ve kapalı — açmayı llama-swap üstlenecek"
+  DC --profile swap up -d || die "kapı ve llama-swap açılmadı"
+  wait_http http://127.0.0.1:8080/health 180 llama-swap || die "llama-swap açılmadı — spark logs llamaswap"
+  wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
+  # İlk istek ısınmayı beklemesin diye ana katmanı burada açıyoruz. Claude Code
+  # kendi zaman aşımına takılmasın diye bu bekleme kuruluma alındı.
+  log "ana katman ısıtılıyor: $FALLBACK_MAIN — ilk açılışta GPU çekirdeği derlenir"
+  if curl -s --max-time "${SWAP_HEALTH_TIMEOUT:-2100}" http://localhost:4000/v1/chat/completions \
+       -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" -H 'Content-Type: application/json' \
+       -d "{\"model\":\"$FALLBACK_MAIN\",\"max_tokens\":8,\"messages\":[{\"role\":\"user\",\"content\":\"OK\"}]}" \
+       >>"$LOGFILE" 2>&1; then
+    ok "$FALLBACK_MAIN ısındı — bundan sonra /model <katman> yeter, spark up gerekmez"
+  else
+    warn "ilk ısıtma tamamlanmadı — 'spark ask \"merhaba\" $FALLBACK_MAIN' ile tekrar dene"
+  fi
   log "   bellek: $(gpumem)"
-done
-wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
+else
+  PROFILE=daily; (( DEMO )) && PROFILE=demo
+  DC --profile "$PROFILE" up -d || die "servisler açılmadı"
+  for t in "${TIERS[@]}"; do
+    log "$t başlatılıyor — $(tier_repo "$t")"
+    wait_http "http://127.0.0.1:$(tier_port "$t")/v1/models" 1800 "$t" || die "$t açılmadı — spark logs $t"
+    log "   bellek: $(gpumem)"
+  done
+  wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
+fi
 ((WITH_EXTRAS)) && { DC --profile extras up -d && ok "Open WebUI: http://localhost:3000" || warn "ekstralar açılmadı"; }
 send
 
@@ -752,6 +859,12 @@ cat <<FIN
                ${D}Qwen kalite · ciddi kod · varsayılan · :8888${R}
       fable    ${FABLE_REPO}
                ${D}NVIDIA ağır · spark up fable (diğerlerini kapatır) · :8001${R}
+
+  ${B}KATMAN DEĞİŞİMİ${R}  (--with-swap veya --all ile kurulduysa)
+      claude içinde /model fable        katman istek anında açılır
+      ${D}ilk açılış ~3-4 dk sürer; llama-swap çakışanları kendi kapatır${R}
+      spark swap                       hangi katman ayakta, ne kadar boşta
+      spark up swap                    llama-swap düzenini (yeniden) aç
 
   ${B}YÖNETİM${R}  (hepsi konteyner)
       spark status              ne çalışıyor, bellek, disk

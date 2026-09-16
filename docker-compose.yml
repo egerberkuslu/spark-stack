@@ -5,6 +5,7 @@
 #     demo   → haiku + sonnet            ~45 GB   en hızlı ayağa kalkan
 #     daily  → haiku + sonnet + opus     ~65 GB   normal kullanım
 #     fable  → fable tek başına         ~105 GB   en yüksek kalite
+#     swap   → llama-swap                        katmanı istek anında açar
 #     extras → webui + qdrant                     ekip arayüzü, doküman arama
 #     stt    → whisper                            ses → yazı
 #
@@ -43,7 +44,7 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: sk-litellm
-    profiles: [demo, daily, fable, extras]
+    profiles: [demo, daily, fable, swap, extras]
     restart: unless-stopped
     ports: ["${GATEWAY_BIND:-127.0.0.1}:4000:4000"]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -55,6 +56,33 @@ services:
       interval: 15s
       timeout: 5s
       retries: 20
+
+  # ── llama-swap · talep-güdümlü katman değişimi ────────────────────────────
+  #  Kapı ile model sunucuları arasına girer. İstek bir katmana geldiğinde o
+  #  katmanın konteynerini başlatır, grup kuralı gereği çakışanları durdurur,
+  #  boşta kalanı ttl dolunca düşürür. "spark up fable" elle yazılmaz.
+  #
+  #  Üç ayrıntı, üçü de bilerek:
+  #   1) Konteyner ağındadır (host ağı değil). Kapı ona "llamaswap:8080" ile,
+  #      o da katmanlara "haiku:8000" gibi servis adlarıyla ulaşır; hiçbir
+  #      port makineye açılmaz.
+  #   2) llama-swap'in Docker API istemcisi YOK; komutu düz exec eder. Bu
+  #      yüzden hem docker.sock hem de statik docker CLI ikilisi bağlanır
+  #      (install.sh indirir: $AI_ROOT/bin/docker).
+  #   3) Sokete root olmadan erişebilsin diye host'un docker grubu eklenir.
+  llamaswap:
+    image: ghcr.io/mostlygeek/llama-swap:${LLAMASWAP_TAG:-unified-cuda13}
+    container_name: sk-llamaswap
+    profiles: [swap]
+    restart: unless-stopped
+    group_add: ["${DOCKER_GID:-999}"]
+    # Yalnız makinenin kendisine açılır; kapı ona zaten ağ içinden ulaşıyor.
+    # Bu port sadece "spark swap" ve sağlık yoklaması için var.
+    ports: ["${SWAP_BIND:-127.0.0.1}:8080:8080"]
+    volumes:
+      - ${AI_ROOT:-/srv/ai}/compose/llamaswap.yaml:/etc/llama-swap/config/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${AI_ROOT:-/srv/ai}/bin/docker:/usr/local/bin/docker:ro
 
   # ── haiku · Qwen3.6-35B-A3B · hızlı Qwen ──────────────────────────────────
   haiku:

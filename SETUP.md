@@ -26,6 +26,8 @@ Depolar `/srv/ai/compose/.env` içinde `HAIKU_REPO`, `SONNET_REPO`, `OPUS_REPO`,
 
 Claude Code içinde `/model haiku`, `/model sonnet`, `/model opus` ile geçiş yapılır. `fable` için önce terminalde `spark up fable` — diğer katmanlar otomatik kapanır.
 
+`--with-swap` (veya `--all`) ile kurduysan bu elle adım ortadan kalkar: `/model fable` demen yeter, llama-swap katmanı kendisi açar. Ayrıntı: [Katman değişimi](#katman-değişimi--llama-swap).
+
 ---
 
 ## Ön hazırlık: HuggingFace anahtarı
@@ -139,7 +141,28 @@ bash install.sh --with-fable --resume      # dördüncü katman
 bash install.sh --with-wiki --resume       # Obsidian + bilgi tabanı
 bash install.sh --with-extras --resume     # Open WebUI + Qdrant + Whisper
 bash install.sh --with-nemoclaw --resume   # NemoClaw ajan kabı
+bash install.sh --with-swap --resume       # llama-swap ile talep-güdümlü katman
 ```
+
+---
+
+## Katman değişimi — llama-swap
+
+`--with-swap` (veya `--all`) ile [llama-swap](https://github.com/mostlygeek/llama-swap) kapı ile model sunucuları arasına girer. Katman elle açılmaz: istek hangi katmana geliyorsa o açılır, çakışan kapanır, boşta kalan süresi dolunca düşer.
+
+![llama-swap ile katman değişimi](docs/figures/spark-llamaswap-dongu.png)
+
+```bash
+spark up swap                 # düzeni aç
+spark swap                    # hangi katman ayakta, bellek ne durumda
+spark ask "merhaba" fable     # soğuk katmanı önden ısıt
+```
+
+Kurulum sonunda ana katman bir kez ısıtılır. Soğuk bir katmana ilk geçişte 3-4 dakika beklenir; bu sürede Claude Code kendi zaman aşımına takılabilir, o yüzden ilk seferi `spark ask` ile ısıtmak pratik çözümdür.
+
+Ayarlar `/srv/ai/compose/.env` içinde: `SWAP_TTL` (boşta düşme süresi), `SWAP_TTL_FABLE` gibi katman başına süreler, `SWAP_HEALTH_TIMEOUT` (ilk açılış payı), `SWAP_BIND`.
+
+Düzeni geri almak için `--no-swap` ile yeniden kur; kapı yeniden katmanlara doğrudan bakar.
 
 ---
 
@@ -192,6 +215,10 @@ Mevcut bir Obsidian vault'un varsa script `adopt` akışını kullanır ve içer
 | Model anlamsız karakter üretiyor | `.env` içinde `VLLM_NVFP4_GEMM_BACKEND=marlin` olduğunu doğrula |
 | Makine kilitlendi | Bellek taşmış. `.env` içindeki ilgili `*_MEM` değerini 0.05 düşür, `spark up daily` |
 | Servis açılmıyor | `spark logs <katman>` |
+| `/model fable` dedim, Claude Code zaman aşımına düştü | Soğuk açılış 3-4 dk. Önce `spark ask "merhaba" fable` ile ısıt, sonra geç. |
+| `spark swap` "llama-swap çalışmıyor" diyor | `spark up swap`; hâlâ olmuyorsa `spark logs llamaswap` |
+| llama-swap logunda `permission denied` (docker.sock) | `.env` içindeki `DOCKER_GID` host'un docker grubuyla eşleşmiyor: `getent group docker` ile bak, düzelt, `spark up swap` |
+| Katman açılmıyor, llama-swap `health check timed out` diyor | `.env` içinde `SWAP_HEALTH_TIMEOUT` değerini artır (varsayılan 2100 sn), `spark up swap` |
 | `nemoclaw` komutu bulunamıyor | Kurulum onu `~/.local/bin` altına koyar; yeni terminal aç ya da `export PATH="$HOME/.local/bin:$PATH"` |
 | NemoClaw onboarding model doğrulamasında düşüyor | Kapı kapalı olabilir: `spark up daily`, sonra `bash install.sh --with-nemoclaw --resume` |
 
