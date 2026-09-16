@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  spark — spark-stack yönetim komutu (her şey Docker)
+#
+#    spark up [demo|daily|fable|extras|stt]  servisleri aç (varsayılan: daily)
+#    spark down                          hepsini kapat
+#    spark status                        ne çalışıyor, bellek, disk
+#    spark logs [servis]                 canlı log
+#    spark pull <sonnet|opus|fable>      model ağırlığı indir (konteynerle)
+#    spark models                        katman → model eşlemesi ve durum
+#    spark ask "soru" [katman]           hızlı test (varsayılan opus)
+#    spark update                        imajları güncelle
+# =============================================================================
+set -uo pipefail
+AI_ROOT="${AI_ROOT:-/srv/ai}"
+cd "$AI_ROOT/compose" 2>/dev/null || { echo "kurulum bulunamadı: $AI_ROOT/compose"; exit 1; }
+set -a; [[ -f .env ]] && source .env; set +a
+# Kullanıcı docker grubuna yeni eklendiyse bu oturumda sokete erişemez; sudo'ya düş.
+if docker info >/dev/null 2>&1; then DKR="docker"
+elif sudo -n docker info >/dev/null 2>&1; then DKR="sudo docker"
+else
+  echo "docker çalışmıyor. Yeni terminal aç ya da: sudo systemctl start docker"; exit 1
+fi
+DC="$DKR compose --env-file $AI_ROOT/compose/.env -f $AI_ROOT/compose/docker-compose.yml"
+
+B=$'\033[1m'; D=$'\033[2m'; G=$'\033[1;32m'; R=$'\033[0m'
+
+port_of() { case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; gateway) echo 4000;; esac; }
+alive()   { curl -sf "http://127.0.0.1:$(port_of "$1")/${2:-v1/models}" >/dev/null 2>&1; }
+
+wait_ready() {  # wait_ready <katman> <saniye>
+  local n=$1 to=${2:-1800} t=0
+  local rv="${n^^}_REPO"; [[ -n "${!rv:-}" ]] && echo "   $n = ${!rv}"
+  while ! alive "$n"; do
+    sleep 5; t=$((t+5))
+    printf '\r  ⏳ %s açılıyor… %ss %s(ilk açılışta GPU çekirdekleri derlenir)%s' "$n" "$t" "$D" "$R"
+    (( t >= to )) && { printf '\n  ✖ %s açılmadı — spark logs %s\n' "$n" "$n"; return 1; }
+  done
+  printf '\r\033[K  %s✓%s %s hazır (%ss)\n' "$G" "$R" "$n" "$t"
+}
+
+case "${1:-status}" in
+
+  up)
+    PROFILE="${2:-daily}"
+    # Bellek çakışmasını önle: fable ile daily aynı anda olamaz
+    if [[ "$PROFILE" == "fable" ]]; then
+      echo ">> haiku/sonnet/opus kapatılıyor (fable tüm belleği ister)"
+      $DC --profile daily stop haiku sonnet opus >/dev/null 2>&1
+    elif [[ "$PROFILE" == "daily" || "$PROFILE" == "demo" ]]; then
+      echo ">> fable kapatılıyor"
+      $DC --profile fable stop fable >/dev/null 2>&1
+      [[ "$PROFILE" == "demo" ]] && $DC --profile daily stop opus >/dev/null 2>&1
+    fi
+    echo ">> $PROFILE açılıyor"
+    $DC --profile "$PROFILE" up -d || exit 1
+    case "$PROFILE" in
+      demo)  wait_ready haiku; wait_ready sonnet ;;
+      daily) wait_ready haiku; wait_ready sonnet; wait_ready opus ;;
+      fable) wait_ready fable 3600 ;;
+    esac
+    wait_ready gateway 300 2>/dev/null || curl -sf http://127.0.0.1:4000/health/liveliness >/dev/null && echo "  ✓ kapı hazır"
+    exec "$0" status
+    ;;
+
+  down)
+    $DC --profile demo --profile daily --profile fable --profile extras --profile stt down
+    echo "kapatıldı"
+    ;;
+
+  status)
+    printf '\n  %sspark-stack%s\n\n' "$B" "$R"
+    repo_of() { local v="${1^^}_REPO"; echo "${!v:-?}"; }
+    for s in haiku sonnet opus fable; do
+      if alive "$s"; then
+        printf '  %-8s %sÇALIŞIYOR%s  %s:%s  %s%s%s\n' "$s" "$G" "$R" "127.0.0.1" "$(port_of "$s")" "$D" "$(repo_of "$s")" "$R"
+      else
+        printf '  %-8s %skapalı%s     %s%s%s\n' "$s" "$D" "$R" "$D" "$(repo_of "$s")" "$R"
+      fi
+    done
+    curl -sf http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1 \
+      && printf '  %-9s %sÇALIŞIYOR%s  http://localhost:4000\n' "kapı" "$G" "$R" \
+      || printf '  %-9s %skapalı%s\n' "kapı" "$D" "$R"
+    curl -sf http://127.0.0.1:3000 >/dev/null 2>&1 && printf '  %-9s %sÇALIŞIYOR%s  http://localhost:3000\n' "webui" "$G" "$R"
+    printf '\n  GPU belleği : %s\n' "$(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader 2>/dev/null || echo ?)"
+    printf '  Modeller    : %s\n' "$(du -sh "$AI_ROOT/models" 2>/dev/null | cut -f1)"
+    printf '  Konteynerler:\n'
+    $DKR ps --filter name=sk- --format '    {{.Names}}  {{.Status}}' 2>/dev/null
+    echo
+    ;;
+
+  logs)  $DC logs -f --tail 100 ${2:-} ;;
+
+  pull)
+    # Model indirmeyi de konteynerle yapıyoruz — makineye python/pip kurmuyoruz
+    M="${2:?kullanım: spark pull haiku|sonnet|opus|fable}"
+    case "$M" in
+      haiku)  REPO="$HAIKU_REPO"  ;;
+      sonnet) REPO="$SONNET_REPO" ;;
+      opus)   REPO="$OPUS_REPO"   ;;
+      fable)  REPO="$FABLE_REPO"  ;;
+      *) echo "bilinmeyen katman: $M  (haiku|sonnet|opus|fable)"; exit 1 ;;
+    esac
+    echo ">> $M katmanı ← $REPO"
+    $DKR run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+      -v "$AI_ROOT/models":/models --entrypoint bash "$VLLM_IMAGE" -c \
+      "hf download '$REPO' --local-dir /models/$M" || exit 1
+    echo ">> bitti: $(du -sh "$AI_ROOT/models/$M" | cut -f1)"
+    ;;
+
+  models)
+    printf '\n  %-8s %-44s %s\n' "KATMAN" "MODEL" "DURUM"
+    printf '  %-8s %-44s %s\n' "──────" "─────" "─────"
+    for t in haiku sonnet opus fable; do
+      v="${t^^}_REPO"
+      printf '  %-8s %-44s %s\n' "$t" "${!v:-?}" \
+        "$(alive "$t" && echo ÇALIŞIYOR || echo kapalı)"
+    done
+    echo
+    echo "  kapıdaki adlar: $(curl -s http://127.0.0.1:4000/v1/models \
+      -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" | jq -r '[.data[].id]|join(", ")' 2>/dev/null || echo 'kapı kapalı')"
+    echo
+    ;;
+
+  ask)
+    Q="${2:-Merhaba, tek kelimeyle cevap ver: çalışıyor musun?}"
+    curl -s --max-time 180 http://127.0.0.1:4000/v1/chat/completions \
+      -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg q "$Q" --arg m "${3:-opus}" '{model:$m,max_tokens:200,messages:[{role:"user",content:$q}]}')" \
+      | jq -r '.choices[0].message.content // .error.message'
+    ;;
+
+  update) $DC --profile daily --profile fable --profile extras pull ;;
+
+  *) sed -n '4,13p' "$0" | sed 's/^# \?//' ;;
+esac
