@@ -57,10 +57,14 @@ Yalnızca demo için:
 bash install.sh --demo --token hf_xxx
 ```
 
-Script 12 adımda ilerler. Model adımında hangi katmanın hangi modeli indirdiği açıkça listelenir:
+Script 13 adımda ilerler:
+
+![Kurulum adımları](docs/figures/spark-kurulum-adimlari.png)
+
+Model adımında hangi katmanın hangi modeli indirdiği açıkça listelenir:
 
 ```
-┌─ [5/12] Model ağırlıkları
+┌─ [5/13] Model ağırlıkları
   │
   │  KATMAN  MODEL                                  BOYUT   KULLANIM
   │  ──────  ─────                                  ─────   ────────
@@ -72,7 +76,7 @@ Script 12 adımda ilerler. Model adımında hangi katmanın hangi modeli indirdi
   │ ✓ sonnet indi — 19.6G
   │ ✓ sonnet taslak indi — spekülatif decode aktif
   │ opus ← unsloth/Qwen3.8-27B-NVFP4  (~20 GB)
-└─ [████████████████············]  58%  1840s · toplam 34:12 · kalan 7 adım
+└─ [████████████████············]  58%  1840s · toplam 34:12 · kalan 8 adım
 ```
 
 Tüm ayrıntı `/srv/ai/install.log` dosyasına yazılır.
@@ -134,7 +138,25 @@ spark pull opus && spark up daily          # katman ekle
 bash install.sh --with-fable --resume      # dördüncü katman
 bash install.sh --with-wiki --resume       # Obsidian + bilgi tabanı
 bash install.sh --with-extras --resume     # Open WebUI + Qdrant + Whisper
+bash install.sh --with-nemoclaw --resume   # NemoClaw ajan kabı
 ```
+
+---
+
+## NemoClaw ajan kabı
+
+`--with-nemoclaw` (veya `--all`) ile [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) kurulur; ajan OpenShell sanal kabında çalışır, model yine yerel kapıdan gelir.
+
+![NemoClaw kabı](docs/figures/spark-nemoclaw-kabi.png)
+
+```bash
+nemoclaw spark connect          # kaba bağlan, ajanı çalıştır
+nemoclaw spark logs --follow    # canlı log
+nemoclaw spark dashboard-url    # tarayıcı paneli
+nemoclaw spark status           # kap, model, ağ politikası
+```
+
+Kap adını değiştirmek için `--sandbox <ad>`. Kurulum host'a yalnızca `nemoclaw` CLI'sini bırakır (Node.js ≥22.19 gerekir, yoksa NemoClaw kendi kurar); ajan ve gateway konteynerde çalışır.
 
 ---
 
@@ -170,6 +192,8 @@ Mevcut bir Obsidian vault'un varsa script `adopt` akışını kullanır ve içer
 | Model anlamsız karakter üretiyor | `.env` içinde `VLLM_NVFP4_GEMM_BACKEND=marlin` olduğunu doğrula |
 | Makine kilitlendi | Bellek taşmış. `.env` içindeki ilgili `*_MEM` değerini 0.05 düşür, `spark up daily` |
 | Servis açılmıyor | `spark logs <katman>` |
+| `nemoclaw` komutu bulunamıyor | Kurulum onu `~/.local/bin` altına koyar; yeni terminal aç ya da `export PATH="$HOME/.local/bin:$PATH"` |
+| NemoClaw onboarding model doğrulamasında düşüyor | Kapı kapalı olabilir: `spark up daily`, sonra `bash install.sh --with-nemoclaw --resume` |
 
 Ayrıntılı kayıt: `/srv/ai/install.log`
 

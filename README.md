@@ -29,6 +29,8 @@ bash install.sh --all --token hf_xxx
 
 Claude Code içinde `/model haiku|sonnet|opus` ile geçilir. Kapalı bir katman istenirse LiteLLM isteği çalışan bir katmana yönlendirir — hata dönmez.
 
+![Katman yönlendirmesi ve düşme zinciri](docs/figures/spark-katman-yonlendirme.png)
+
 Depolar `.env` içinde `HAIKU_REPO`, `SONNET_REPO`, `OPUS_REPO`, `FABLE_REPO` olarak tanımlı. Hangi katmanın hangi modeli çalıştırdığı kurulum boyunca ekranda ve `spark models` çıktısında gösterilir.
 
 ### Neden bu dörtlü
@@ -53,17 +55,7 @@ Alternatif depolar `.env` sonunda yorum olarak listelenmiştir.
 
 ## Mimari
 
-```
-Claude Code / VS Code / betikler
-              │
-              ▼
-      LiteLLM  :4000          tek OpenAI + Anthropic uyumlu kapı
-              │
-   ┌──────────┼──────────┬──────────┐
-   ▼          ▼          ▼          ▼
- haiku     sonnet      opus       fable        vLLM konteynerleri
- :8002     :8000       :8888      :8001        NVFP4, Marlin, prefix cache
-```
+![spark-stack mimarisi](docs/figures/spark-mimari.png)
 
 Makineye kurulan tek bileşen Claude Code'dur (tek dosyalık CLI, terminalde çalışması gerekiyor). Model sunucuları, kapı, veritabanları ve MCP sunucularının tamamı konteynerde çalışır — sistem Python'una dokunulmaz, aarch64 wheel sorunu yaşanmaz.
 
@@ -77,12 +69,15 @@ bash install.sh             # + opus                    ~65 GB    30-40 dk
 bash install.sh --all       # dört katman + eklentiler ~132 GB    50-70 dk
 ```
 
+![Kurulum profilleri](docs/figures/spark-kurulum-profilleri.png)
+
 | Bayrak | Açıklama |
 |---|---|
 | `--token hf_xxx` | HuggingFace anahtarını komutla ver (sorulmaz) |
 | `--with-fable` | Dördüncü katman |
 | `--with-extras` | Open WebUI, Qdrant, Whisper |
 | `--with-wiki` | Obsidian + claude-obsidian bilgi tabanı |
+| `--with-nemoclaw` | NVIDIA NemoClaw ajan kabı (`--all` içinde) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--resume` | Yarım kalan kurulumu sürdür |
 | `--status` / `--uninstall` | Durum / kaldırma |
@@ -135,6 +130,7 @@ spark down                  # tümünü durdur
 | MCP sunucuları | filesystem, git, fetch, context7, playwright, memory, sequential-thinking — hepsi konteyner |
 | Skill'ler | Superpowers (TDD, sistematik hata ayıklama, plan çıkarma) |
 | Bilgi tabanı | Obsidian + claude-obsidian (15 skill) — `--with-wiki` |
+| Ajan kabı | NVIDIA NemoClaw + OpenShell, model yerel kapıdan — `--with-nemoclaw` |
 | Ekstralar | Open WebUI, Qdrant, Whisper — `--with-extras` |
 
 ---
@@ -167,6 +163,26 @@ LITELLM_KEY=<uzun-bir-anahtar>
 `spark up daily` ile yeniden başlatılır. İstemci tarafında: OpenAI uyumlu uç `http://<spark-ip>:4000/v1`, model adı `opus`. Claude Code için `ANTHROPIC_BASE_URL=http://<spark-ip>:4000`.
 
 Ofis dışı erişim için Tailscale önerilir — port açmayı ve sabit IP'yi gerektirmez.
+
+---
+
+## NemoClaw ajan kabı
+
+`--with-nemoclaw` (ya da `--all`) ile [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) (Apache-2.0) kurulur: ajanı OpenShell sanal kabında çalıştırır, üstüne ağ politikası, anlık görüntü ve yaşam döngüsü yönetimi koyar. Varsayılan ajanı OpenClaw.
+
+![NemoClaw kabı](docs/figures/spark-nemoclaw-kabi.png)
+
+Model buluttan değil bizim kapımızdan gelir: LiteLLM `:4000`, NemoClaw'a OpenAI uyumlu uç (`NEMOCLAW_PROVIDER=custom`) olarak kaydedilir; kabın içinden `inference.local` adıyla görünür.
+
+```bash
+nemoclaw spark connect          # kaba bağlan, ajanı çalıştır
+nemoclaw spark logs --follow    # canlı log
+nemoclaw spark dashboard-url    # tarayıcı paneli
+nemoclaw spark status           # kap, model, ağ politikası
+nemoclaw spark policy list      # ağ politikası kuralları
+```
+
+İki dürüst not. Bu, projenin "makineye tek şey kurulur" kuralından tek sapmadır: NemoClaw kendi CLI'sini host'a bırakır (Node.js ≥22.19 + `~/.local/bin/nemoclaw`), çünkü dağıtım biçimi bu; ajanın kendisi, gateway ve kap yine konteynerde. İkincisi, Anthropic uyumlu yol da mevcut ama OpenClaw o yolda akışta native `tool_use`/`emit_ok` doğrulaması arıyor; yerel modellerde kırılgan olduğu için OpenAI uyumlu yol seçildi.
 
 ---
 
@@ -219,3 +235,4 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 | MCP sunucuları | `mcp/*` Docker kataloğu |
 | Skill kütüphanesi | `obra/superpowers` |
 | Bilgi tabanı | `AgriciDaniel/claude-obsidian` |
+| Ajan kabı | `NVIDIA/NemoClaw` + `NVIDIA/OpenShell` |

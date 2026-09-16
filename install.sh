@@ -10,6 +10,7 @@
 #    --with-fable        dördüncü katman (en yüksek kalite)                   #
 #    --with-extras       Open WebUI + Qdrant + Whisper                        #
 #    --with-wiki         Obsidian + claude-obsidian bilgi tabanı              #
+#    --with-nemoclaw     NVIDIA NemoClaw ajan kabı (--all dahil)              #
 #    --vault PATH        vault yolu (varsayılan ~/vault)                      #
 #    --resume            yarım kalan kurulumu sürdür                          #
 #    --status            servis durumu     --uninstall   tümünü kaldır        #
@@ -26,19 +27,21 @@ AI_ROOT="${AI_ROOT:-/srv/ai}"
 MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
-WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; RESUME=0; MODE=install; DEMO=0
+WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; RESUME=0; MODE=install; DEMO=0
 TIERS=(haiku sonnet opus)          # varsayılan kurulum katmanları
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-}"
+NEMOCLAW_SANDBOX="${NEMOCLAW_SANDBOX:-spark}"   # NemoClaw kabının adı
 
 if [[ -t 1 ]]; then B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
   RED=$'\033[1;31m'; GRN=$'\033[1;32m'; YLW=$'\033[1;33m'; BLU=$'\033[1;36m'
 else B=""; D=""; R=""; RED=""; GRN=""; YLW=""; BLU=""; fi
 
-STEP_KEYS=(precheck docker layout images models gateway boot claude mcp skills wiki verify)
+STEP_KEYS=(precheck docker layout images models gateway boot claude mcp skills wiki nemoclaw verify)
 STEP_NAME=("Ön kontrol" "Docker + GPU altyapısı" "Dosya düzeni" "İmajlar indiriliyor" \
            "Model ağırlıkları" "Kapı ayarı" "Servisler açılıyor" "Claude Code" \
-           "MCP sunucuları" "Skill'ler" "Obsidian + bilgi tabanı" "Doğrulama")
-STEP_WEIGHT=(1 6 1 12 50 2 15 4 8 3 3 1)
+           "MCP sunucuları" "Skill'ler" "Obsidian + bilgi tabanı" "NemoClaw ajan kabı" \
+           "Doğrulama")
+STEP_WEIGHT=(1 6 1 12 50 2 15 4 8 3 3 6 1)
 TOTAL_WEIGHT=0; DONE_WEIGHT=0; CUR=0; STEP_START=0
 
 elapsed(){ local s=$(( $(date +%s)-START_TS )); printf '%02d:%02d' $((s/60)) $((s%60)); }
@@ -70,6 +73,19 @@ spin(){ local m="$1"; shift; local tmp; tmp=$(mktemp)
   while kill -0 $pid 2>/dev/null; do
     printf '\r  %s│%s %s %s %s(%ss)%s ' "$D" "$R" "${mk:i++%4:1}" "$m" "$D" $(( $(date +%s)-t0 )) "$R"; sleep 0.4
   done; wait $pid; local rc=$?; printf '\r\033[K'; cat "$tmp" >>"$LOGFILE"; rm -f "$tmp"; return $rc; }
+
+# Uzun süren dış kurulumlar (curl|bash gibi) için. spin()'in aksine çıktıyı
+# gizlemez: her satır loga tam, ekrana soluk ve kırpılmış düşer — dakikalarca
+# süren bir adımda ne olduğu görünsün diye.
+stream(){ local tag="$1"; shift
+  _w "--- $tag başladı ---"
+  "$@" 2>&1 | while IFS= read -r line; do
+    _w "$line"
+    printf '  %s│   %.110s%s\n' "$D" "$line" "$R"
+  done
+  local rc=${PIPESTATUS[0]}
+  _w "--- $tag bitti (rc=$rc) ---"
+  return "$rc"; }
 
 wait_http(){ local u=$1 to=${2:-1800} l=${3:-servis} t=0
   while ! curl -sf "$u" >/dev/null 2>&1; do sleep 5; t=$((t+5))
@@ -109,13 +125,15 @@ DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
   --demo) DEMO=1; TIERS=(haiku sonnet) ;;
-  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1 ;;
+  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1 ;;
   --with-fable) WITH_FABLE=1 ;; --with-extras) WITH_EXTRAS=1 ;;
+  --with-nemoclaw) WITH_NEMOCLAW=1 ;; --no-nemoclaw) WITH_NEMOCLAW=0 ;;
+  --sandbox) shift; NEMOCLAW_SANDBOX="${1:-spark}" ;; --sandbox=*) NEMOCLAW_SANDBOX="${1#--sandbox=}" ;;
   --with-wiki) WITH_WIKI=1 ;; --vault) shift; OBSIDIAN_VAULT="${1:-}"; WITH_WIKI=1 ;;
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,15p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,16p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
@@ -126,6 +144,11 @@ if [[ "$MODE" == uninstall ]]; then
   read -rp "  Onaylıyorsan 'evet' yaz: " a; [[ "$a" == evet ]] || exit 0
   [[ -f "$CDIR/docker-compose.yml" ]] && DC --profile daily --profile fable --profile extras --profile stt down -v 2>/dev/null || true
   detect_docker; dk ps -aq --filter name=sk- | xargs -r $DKR rm -f 2>/dev/null || true
+  # NemoClaw kabını, OpenShell gateway'ini ve CLI'sini kendi kaldırıcısı siler.
+  if have nemoclaw; then
+    echo "  NemoClaw kaldırılıyor"
+    nemoclaw uninstall --yes >/dev/null 2>&1 || echo "  ! olmadı — elle: nemoclaw uninstall --yes"
+  fi
   sudo rm -rf "$AI_ROOT"; sudo rm -f /usr/local/bin/spark
   sed -i '/# >>> spark-stack >>>/,/# <<< spark-stack <<</d' ~/.bashrc
   echo "  silindi"; exit 0
@@ -154,6 +177,7 @@ $( ((WITH_FABLE)) && echo "    ${B}fable${R}   ~67 GB  :8001   Nemotron-3-Super-
     ${B}kapı${R}     LiteLLM                   tek API adresi            :4000
 $( ((WITH_EXTRAS)) && echo "    ${B}ekstra${R}   Open WebUI + Qdrant + Whisper                       :3000" )
 $( ((WITH_WIKI))   && echo "    ${B}vault${R}    Obsidian + claude-obsidian (15 skill)" )
+$( ((WITH_NEMOCLAW)) && echo "    ${B}nemoclaw${R} NVIDIA NemoClaw — ajan OpenShell kabında, model kapıdan" )
 
   ${B}İNDİRME${R}  $( ((DEMO)) && echo "~45 GB" || { ((WITH_FABLE)) && echo "~132 GB" || echo "~65 GB"; } )
   ${D}1 Gbit hatta $( ((DEMO)) && echo "15-20 dk" || { ((WITH_FABLE)) && echo "50-70 dk" || echo "30-40 dk"; } ) \
@@ -175,7 +199,9 @@ else
   warn "NVIDIA sürücüsü görünmüyor — sonraki adımda kurulacak"
 fi
 FREE=$(df -BG --output=avail "$AI_ROOT" | tail -1 | tr -dc '0-9')
-NEED=$(( WITH_FABLE ? 200 : 100 )); ok "boş disk ${FREE}GB (gereken ~${NEED}GB)"
+NEED=$(( WITH_FABLE ? 200 : 100 ))
+(( WITH_NEMOCLAW )) && NEED=$(( NEED + 10 ))    # OpenShell gateway + kap imajları
+ok "boş disk ${FREE}GB (gereken ~${NEED}GB)"
 (( FREE < NEED )) && die "disk yetersiz"
 curl -sf https://huggingface.co >/dev/null || die "internet yok"
 
@@ -619,8 +645,85 @@ WIKIEOF
 fi
 send
 
-# ── 11 DOĞRULAMA ────────────────────────────────────────────────────────────
+# ── 11 NEMOCLAW — yalıtılmış ajan kabı ──────────────────────────────────────
+#  NVIDIA NemoClaw (Apache-2.0, github.com/NVIDIA/NemoClaw): ajanı OpenShell
+#  sanal kabında çalıştırır, üstüne ağ politikası, anlık görüntü ve yaşam
+#  döngüsü yönetimi koyar. Varsayılan ajanı OpenClaw.
+#
+#  Projenin "makineye tek şey kurulur" kuralından tek sapma burası: NemoClaw
+#  yalnız kendi CLI'sini host'a bırakıyor (Node.js + ~/.local/bin/nemoclaw),
+#  çünkü dağıtım biçimi bu. Ajanın kendisi, gateway ve kap yine konteynerde.
+#
+#  Model buluttan değil bizim kapımızdan gelir: LiteLLM :4000 OpenAI uyumlu uç
+#  olarak kaydedilir. Anthropic uyumlu yol da var ama OpenClaw o yolda akışta
+#  native tool_use/emit_ok doğrulaması arıyor; yerel modellerde kırılgan.
 sbegin 11
+if (( WITH_NEMOCLAW == 0 )); then
+  log "atlandı — sonradan:  bash install.sh --with-nemoclaw --resume"
+else
+  NC_KEY="${LITELLM_KEY:-sk-spark}"
+  NC_URL="http://localhost:4000/v1"
+  log "kaynak : https://www.nvidia.com/nemoclaw.sh  (NVIDIA/NemoClaw · Apache-2.0)"
+  log "kap    : $NEMOCLAW_SANDBOX"
+  log "model  : $FALLBACK_MAIN  ←  $NC_URL"
+
+  # Onboarding ucu gerçekten yokluyor; kapı kapalıysa orada takılır.
+  if curl -sf --max-time 10 http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1; then
+    ok "kapı ayakta — NemoClaw modeli doğrulayabilecek"
+  else
+    warn "kapı (:4000) cevap vermiyor — onboarding model doğrulamasında düşebilir"
+  fi
+  if have node; then log "node $(node -v 2>/dev/null || echo '?')  (NemoClaw en az v22.19 ister)"
+  else log "node yok — NemoClaw kendi kuracak (nvm ile)"; fi
+
+  export PATH="$HOME/.local/bin:$PATH"
+  if have nemoclaw; then
+    ok "nemoclaw zaten kurulu — $(nemoclaw --version 2>/dev/null | head -1 || echo '?')"
+  else
+    # HF_TOKEN bilerek geçilmiyor: yönetilen vLLM kullanmıyoruz, anahtarın
+    # başka bir aracın durum dosyalarına yazılmasına gerek yok.
+    # NEMOCLAW_SANDBOX_GPU=0: birleşik bellek zaten vLLM'de; çıkarım dışarıdan
+    # geldiği için kabın GPU'ya ihtiyacı yok.
+    nemoclaw_bootstrap(){
+      curl -fsSL https://www.nvidia.com/nemoclaw.sh | env \
+        NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+        NEMOCLAW_NON_INTERACTIVE=1 \
+        NEMOCLAW_NO_EXPRESS=1 \
+        NEMOCLAW_NON_INTERACTIVE_SUDO_MODE=prompt \
+        NEMOCLAW_SANDBOX_NAME="$NEMOCLAW_SANDBOX" \
+        NEMOCLAW_SANDBOX_GPU=0 \
+        NEMOCLAW_PROVIDER=custom \
+        NEMOCLAW_ENDPOINT_URL="$NC_URL" \
+        NEMOCLAW_MODEL="$FALLBACK_MAIN" \
+        COMPATIBLE_API_KEY="$NC_KEY" \
+        bash -s -- --non-interactive --yes-i-accept-third-party-software
+    }
+    log "kuruluyor: Node.js + OpenShell + CLI + kap — çıktının tamamı $LOGFILE"
+    if stream nemoclaw nemoclaw_bootstrap; then
+      ok "NemoClaw kurulumu bitti"
+    else
+      warn "NemoClaw kurulumu tamamlanamadı — spark-stack'in geri kalanı etkilenmedi"
+      log "elle:  curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash   sonra:  nemoclaw onboard"
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+
+  if have nemoclaw; then
+    ok "nemoclaw $(nemoclaw --version 2>/dev/null | head -1 || echo '?')"
+    nemoclaw list --json >>"$LOGFILE" 2>&1 || true
+    NC_DASH="$(nemoclaw "$NEMOCLAW_SANDBOX" dashboard-url --quiet 2>/dev/null | tr -d '\r' | head -1 || true)"
+    if [[ -n "$NC_DASH" ]]; then ok "panel: $NC_DASH"
+    else log "panel adresi sonra:  nemoclaw $NEMOCLAW_SANDBOX dashboard-url"; fi
+    grep -q '^NEMOCLAW_SANDBOX=' "$ENVF" || echo "NEMOCLAW_SANDBOX=$NEMOCLAW_SANDBOX" >> "$ENVF"
+    log "bağlan:  nemoclaw $NEMOCLAW_SANDBOX connect   ·   log:  nemoclaw $NEMOCLAW_SANDBOX logs --follow"
+  else
+    warn "nemoclaw komutu PATH'te yok — yeni terminal aç ya da logu oku: $LOGFILE"
+  fi
+fi
+send
+
+# ── 12 DOĞRULAMA ────────────────────────────────────────────────────────────
+sbegin 12
 RESP="$(curl -s --max-time 180 http://localhost:4000/v1/messages \
   -H "x-api-key: ${LITELLM_KEY:-sk-spark}" -H 'anthropic-version: 2023-06-01' -H 'content-type: application/json' \
   -d "{\"model\":\"$FALLBACK_MAIN\",\"max_tokens\":30,\"messages\":[{\"role\":\"user\",\"content\":\"Sadece OK yaz.\"}]}" \
@@ -665,6 +768,14 @@ cat <<FIN
       wiki "X nasıldı?"         vault'a soru sor
       obsidian                  Obsidian uygulamasını aç
       ~/vault/inbox/            kaynak at, sonra /claude-obsidian:wiki-ingest
+
+  ${B}NEMOCLAW${R}  (--with-nemoclaw veya --all ile kurulduysa)
+      nemoclaw ${NEMOCLAW_SANDBOX} connect        kaba bağlan, ajanı çalıştır
+      nemoclaw ${NEMOCLAW_SANDBOX} logs --follow  canlı log
+      nemoclaw ${NEMOCLAW_SANDBOX} dashboard-url  tarayıcı paneli
+      nemoclaw ${NEMOCLAW_SANDBOX} status         kap, model, ağ politikası
+      nemoclaw ${NEMOCLAW_SANDBOX} policy list    ağ politikası kuralları
+      ${D}model kapıdan gelir: ${FALLBACK_MAIN} @ localhost:4000 — bulut yok${R}
 
 FIN
 (( DEMO )) && printf '  %sopus sonradan:%s spark pull opus && spark up daily\n' "$D" "$R"
