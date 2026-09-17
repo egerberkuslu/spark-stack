@@ -56,6 +56,10 @@ ayırır ve PR açıklamasını hazırlar.
 
 PR açılır, **birleştirilmez**. Birleştirme kararı insanındır.
 
+Kurallar yalnız okunmaz, mekanik olarak da zorlanır: commit, itme ve PR bir kural kapısından
+geçer (`kurallar/*.md` dosyalarının "Mekanik denetim" bölümü). Kapı kapalıysa iş bitmiş
+sayılmaz; `spark kural pr` çıktısı rapora girer.
+
 ## Model seçimi
 
 Kapı tek adrestir ve katman ada göre seçilir. Hızlı ve ucuz işler (özet, etiketleme, commit

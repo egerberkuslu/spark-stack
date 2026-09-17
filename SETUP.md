@@ -171,6 +171,11 @@ Kurulum sonunda ana katman bir kez ısıtılır. Soğuk bir katmana ilk geçişt
 
 Ayarlar `/srv/ai/compose/.env` içinde: `SWAP_TTL` (boşta düşme süresi), `SWAP_TTL_FABLE` gibi katman başına süreler, `SWAP_HEALTH_TIMEOUT` (ilk açılış payı), `SWAP_BIND`.
 
+İkinci bir Spark eklemek için eş makinede `SWAP_BIND=0.0.0.0` verilir, ana makinede `.env` içine
+`SPARK_PEERS=spark2:8081` yazılır ve `bash install.sh --resume` koşulur; kapı her katman için ikinci
+bir dağıtım ekler ve istekleri dağıtır. llama-swap'ın kimlik doğrulaması yoktur, eş makine yalnız
+güvenilen ağda durur.
+
 Düzeni geri almak için `--no-swap` ile yeniden kur; kapı yeniden katmanlara doğrudan bakar.
 
 ---
@@ -213,6 +218,36 @@ Kuralı değiştirmek için dosyayı doğrudan aç. Tek kaynak olduğu için, ka
 ajanlar yeni kurala bağlanır; yeniden kurulum gerekmez.
 
 ---
+
+## Kural kapısı ve anahtarlar
+
+Kurulum kuralları mekanik olarak da zorlar. `core.hooksPath` bütün depoları `/srv/ai/denetim/hooks`
+altındaki kancalara bağlar; Canvas kabı aynı dizini `/opt/spark-denetim` olarak görür. Araçlar
+kendi sanal ortamında (`/srv/ai/denetim/.venv`: ruff, pytest) ve `bin/` altında (ruff ve statik
+shellcheck ikilileri) durur, sistem Python'una dokunulmaz.
+
+```bash
+spark kural pr                 # PR kapısı: dal farkı, testler, PR açıklaması (proje dizininde)
+spark kural pr --base develop  # taban dal farklıysa
+spark kural dosya src/x.py     # tek dosya
+spark kural kur ~/projects/x   # projeye .kural/ kopyası, CI iş akışı ve PR şablonu
+spark kural durum              # kanca yolu, araç sürümleri, son atlamalar
+KURAL_KAPISI_ATLA=1 git commit # bir kerelik atlama; kayda geçer
+```
+
+Kapı geçmiyorsa çıktı hangi kural dosyasının hangi bölümü olduğunu söyler; kuralın kendisi
+`~/vault/kurallar/` altındadır. Kabuk denetimi varsayılan olarak uyarı düzeyindedir;
+`KURAL_KAPISI_SHELLCHECK=info` tırnak ve stil bulgularını da açar.
+
+Anahtarlar `.env` içinde `KEY_INSAN`, `KEY_CANVAS`, `KEY_NEMOCLAW`, `KEY_A2A` olarak durur; kapı
+veritabanı `/srv/ai/data/litellm-db` altındadır. Otomasyon anahtarları fable'a erişemez ve günlük
+bütçeleri vardır (`OTOMASYON_GUNLUK_MTOKEN`, varsayılan 20M token). `spark anahtarlar` harcamayı
+gösterir. Bütçesi dolan bir ajanın anahtarını açmak için kapıya sorulur:
+
+```bash
+curl -s -X POST http://127.0.0.1:4000/key/update -H "Authorization: Bearer $LITELLM_KEY" \
+  -H 'Content-Type: application/json' -d "{\"key\":\"$KEY_CANVAS\",\"max_budget\":40}"
+```
 
 ## Agent Canvas — ajan kontrol merkezi
 

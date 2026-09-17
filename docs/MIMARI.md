@@ -44,8 +44,9 @@ opus'a gider. fable bu tabloda bilerek yalnız bir satırda: aşağıdaki nedenl
 ## Yönetişim: kim, neyi, ne kadar
 
 Tek bir `master_key` ile çalışan bir kapı, tek geliştirici için yeterlidir; beş ajan için
-değildir. Şirket kurulumunda kapının bir veritabanı olmalı ve her ajan kendi anahtarıyla
-bağlanmalı. Bunun üç karşılığı var:
+değildir. Bu yüzden kapının bir veritabanı var (`sk-litellm-db`) ve kurulum dört anahtar
+üretir: `insan`, `canvas`, `nemoclaw`, `a2a`. Her çalışma zamanı kendi anahtarıyla bağlanır.
+Bunun üç karşılığı var:
 
 **Kimlik.** Kapı logunda "sk-spark 4.2M token harcadı" değil, "PR inceleme ajanı 4.2M token
 harcadı" yazar. Bir ajan çığırından çıktığında hangisi olduğunu görürsün.
@@ -60,7 +61,16 @@ beş ajan için, birinin fable istemesi diğer dördünün modelini altından ç
 fable insan tarafından bilerek seçilen bir katman olarak kalmalı, bir otomasyonun
 erişebileceği yerde durmamalı.
 
-Pratikte: `SWAP_TTL_FABLE` kısa tutulur, fable yalnız geliştiricinin anahtarında açık olur.
+Pratikte: otomasyon anahtarlarının model listesinde fable yoktur, kapı bu isteğe 403 döner;
+insan anahtarı `all-proxy-models` ile her katmana ulaşır. Otomasyon anahtarlarında ayrıca günlük
+token bütçesi vardır (`OTOMASYON_GUNLUK_MTOKEN`, varsayılan 20M); bütçe dolunca kapı 429 döner ve
+döngüye giren ajan durur. Yerel modelin parası olmadığı için maliyet nominal tutulur, 1 $ = 1M
+token. `spark anahtarlar` harcamayı ve kalan bütçeyi gösterir; kurulumun doğrulama adımı canvas
+anahtarıyla fable isteyip 403 gördüğünü raporlar.
+
+Kurallar da yalnız istemde durmaz. Ölçülebilir olan her kural git kancasında, PR kapısında ve
+CI'da mekanik olarak zorlanır; hangi kuralın nerede denetlendiği `kurallar/*.md` dosyalarının
+"Mekanik denetim" bölümünde yazar. Ölçülemeyenler `spark-denetci` incelemesinde kalır.
 
 ---
 
@@ -223,7 +233,13 @@ alındı çünkü 8080 NemoClaw'ın OpenShell gateway'inin varsayılanı. Tam li
 
 ## Tek makinenin gerçeği
 
-Bu mimarinin en dürüst kısmı: **ajan sayısını artırmak iş gücünü artırmaz.** Dört katman da
+Bu belge şirket mantığını anlatıyor; kurulu olan tek bir makine. 128 GB birleşik bellek, tek
+GPU. Günlük üç katman birlikte yaklaşık 65 GB (25 + 20 + 20), fable tek başına 67 GB; ikisi
+birden sığmadığı için fable dışlayıcıdır. Bu bir araştırma laboratuvarının ölçeğidir. Doğru
+okuma şu: kurallar, roller, anahtarlar ve kapı şirket ölçeğine göre kuruludur, model havuzu
+tek makinedir. Tasarımın şirket mantığı taşıması kapasitenin şirket olması demek değildir.
+
+Bunun en dürüst sonucu: **ajan sayısını artırmak iş gücünü artırmaz.** Dört katman da
 aynı 128 GB'yi paylaşır. İki ajan aynı anda opus isterse ikisi de aynı vLLM örneğine düşer
 ve sıraya girer; işler paralelleşmez, kuyruk uzar.
 
@@ -236,9 +252,16 @@ Soğuk başlatmayı iş akışının içine koyma. Bir katman kapalıysa ilk ist
 Zamanlayıcıyla çalışan bir otomasyon bunu her seferinde ödemesin diye, o katmanın
 `SWAP_TTL` değeri otomasyonun periyodundan uzun olmalı.
 
-Gerçekten paralel iş gerekiyorsa çözüm ikinci bir Spark'tır, daha fazla ajan değil. Kapı
-zaten birden çok arka ucu tek adres altında toplayabilir; mimaride değişecek tek şey model
-havuzunun makine sayısıdır.
+fable'ı otomasyondan uzak tut. Bu artık bir tavsiye değil, anahtar düzeyinde bir yasak:
+otomasyon anahtarları fable isteyince kapı 403 döner.
+
+Gerçekten paralel iş gerekiyorsa çözüm ikinci bir Spark'tır, daha fazla ajan değil. Bunun için
+hiçbir ajan, rol, kural ya da anahtar değişmez; kapı zaten bir yük dengeleyicidir. Eş makinede
+llama-swap LAN'a açılır (`SWAP_BIND=0.0.0.0`), ana makinede `.env` içine
+`SPARK_PEERS=spark2:8081` yazılır ve kurulum her katman için ikinci bir dağıtım ekler; aynı ad,
+iki adres, kapı istekleri dağıtır. Kapının iki dağıtım arasında dağıttığı sahte arka uçla
+doğrulandı; gerçek bir ikinci Spark ile henüz denenmedi. llama-swap'ın kendi kimlik doğrulaması
+yoktur, bu yüzden eş makineler yalnız güvenilen ağda durur.
 
 ---
 
@@ -265,8 +288,10 @@ ayrı bir kapı açmaktan iyidir.
 | Claude Code (host) | Kurulu |
 | NemoClaw kabı | Kurulu — `--with-nemoclaw` |
 | Obsidian bilgi tabanı | Kurulu — `--with-wiki` |
-| Agent Canvas + otomasyonlar | Bu belgeyle tasarlandı, kurulum eklenecek |
-| Kapı veritabanı + ajan başına anahtar | Tasarlandı, henüz kurulu değil |
+| Agent Canvas + otomasyonlar | Kurulu — `--with-canvas` |
+| Kapı veritabanı + ajan başına anahtar, bütçe, model izni | Kurulu — her kurulumda |
+| Kural kapısı: git kancaları, PR kapısı, CI şablonu | Kurulu — her kurulumda |
+| İkinci makine (`SPARK_PEERS`) | Kapı tarafı hazır, gerçek eş makineyle denenmedi |
 | Medya havuzu | Mimaride yer ayrıldı, bugün yok |
 
 ---

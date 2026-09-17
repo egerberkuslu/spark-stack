@@ -96,8 +96,8 @@ bilerek seçtiği yerdir.
 **5 · İş bölümü.** İş çok adımlıysa tek ajan baştan sona götürmez. `spark-kod` yazar ve neyin
 test edilmesi gerektiğini söyleyerek devreder, `spark-test` testi yazar ve **çalıştırır**,
 çıktısını rapora koyar, kırılan testi kendisi düzeltmeyip geri devreder, `spark-denetci`
-değişikliğin tamamını okur ve PR açıklamasını hazırlar. PR açılır ama birleştirilmez; o karar
-insanındır.
+değişikliğin tamamını okur ve PR açıklamasını hazırlar. PR açılmadan önce kural kapısı koşar:
+kapı kapalıysa PR açılmaz. PR açılır ama birleştirilmez; o karar insanındır.
 
 Yol boyunca iki kez bilgi tabanına sapılır: başta kural okunur, sonunda geçmiş bir karar ya da
 kaynak gerektiğinde vault'ta aranır. Vault iki tarafta da salt okunur bağlıdır, yani ajan okur
@@ -168,6 +168,8 @@ spark canvas                # Agent Canvas adresi ve ayarları
 spark a2a                   # A2A köprüsü: kart ve roller
 spark agents --kurulu       # kurulu uzman roller
 spark agents                # ekle/çıkar (etkileşimli)
+spark kural pr              # PR kapısı: kurallar, testler, açıklama
+spark anahtarlar            # ajan anahtarları: harcama, bütçe, model izni
 spark up canvas             # kontrol merkezini aç
 spark up swap               # llama-swap düzenini aç
 spark up demo               # haiku + sonnet
@@ -198,6 +200,8 @@ spark down                  # tümünü durdur
 | Ajan kabı | NVIDIA NemoClaw + OpenShell, model yerel kapıdan — `--with-nemoclaw` |
 | Kontrol merkezi | Agent Canvas: konuşmalar, otomasyonlar, ACP alt ajanları — `--with-canvas` |
 | A2A köprüsü | Rolleri Agent2Agent protokolüyle dışarı açar — `--with-a2a` |
+| Kural kapısı | git kancaları, PR kapısı, CI şablonu; ruff, pytest ve shellcheck kendi sanal ortamında |
+| Kapı veritabanı | Postgres; ajan başına anahtar, günlük bütçe, model izni |
 | Ekstralar | Open WebUI, Qdrant, Whisper — `--with-extras` |
 
 ---
@@ -209,6 +213,7 @@ Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra ke
 | Port | Servis | Ne zaman açılır | Değiştir |
 |---|---|---|---|
 | `4000` | **LiteLLM kapı** — tek API adresi | her zaman | `GATEWAY_BIND` |
+| yok | **Kapı veritabanı** (Postgres) · anahtar, bütçe, harcama · yalnız konteyner ağında | her zaman | bağlanmaz |
 | `8002` | `haiku` (vLLM) | `demo`, `daily` | — |
 | `8000` | `sonnet` (vLLM) | `demo`, `daily` | — |
 | `8888` | `opus` (vLLM) | `daily` | — |
@@ -233,13 +238,14 @@ elle yapılan bir iş değil.
 
 | Bileşen | Modele nasıl ulaşır | Kuralları alır mı | Vault'ta araştırabilir mi |
 |---|---|---|---|
-| Claude Code (makinede) | `.bashrc` → `ANTHROPIC_BASE_URL=:4000` | evet | evet — `~/vault` + vault MCP + `wiki` |
-| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000` | evet | evet — `/vault` salt okunur |
-| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000` | evet | evet — `/vault` salt okunur |
-| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1` | evet | kısmen — yol sistem isteminde, dosya aracı çağırana bağlı |
+| Claude Code (makinede) | `.bashrc` → `:4000`, anahtar `KEY_INSAN` (fable dahil) | evet | evet — `~/vault` + vault MCP + `wiki` |
+| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000`, anahtar `KEY_CANVAS` (fable yok, bütçeli) | evet | evet — `/vault` salt okunur |
+| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000`, anahtar `KEY_CANVAS` | evet | evet — `/vault` salt okunur |
+| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1`, anahtar `KEY_A2A` | evet | kısmen — yol sistem isteminde, dosya aracı çağırana bağlı |
 | Open WebUI | `OPENAI_API_BASE_URL` → `:4000/v1` | ilgisiz | hayır |
-| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1` | **hayır** | **hayır** — aşağıya bak |
+| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1`, anahtar `KEY_NEMOCLAW` | **hayır** | **hayır** — aşağıya bak |
 | llama-swap | katmanlara servis adıyla (`haiku:8000`) | ilgisiz | hayır |
+| Kural kapısı | model kullanmaz | zorlar: ölçülebilir kurallar burada durur | hayır |
 
 ### Nereden çalışırsan çalış aynı sistem
 
@@ -254,6 +260,7 @@ kurallar, aynı skill'ler, aynı bilgi tabanı. Bugün duran tablo:
 | Bilgi tabanı okuma | `~/vault` | `/vault` salt okunur |
 | claude-obsidian'ın 15 skill'i | eklenti olarak | **ortak skill dizininde** |
 | Host skill'leri (superpowers vb.) | `~/.claude/skills` | **ortak skill dizininde** |
+| Kural kapısı | `core.hooksPath` ile her depo | `GIT_CONFIG_*` ile aynı kancalar |
 | MCP sunucuları | yedisi de | **yok** — aşağıya bak |
 
 Skill birliğini `roller/skill-birlestir.sh` kuruyor: kurallar, claude-obsidian skill'leri ve
@@ -289,6 +296,77 @@ güvenilen giriş noktası; bilgi tabanını oraya bağlamak istenmedi. Gerekirs
 `nemoclaw onboard --host-mount ~/vault/kurallar:/vault/kurallar` ile salt okunur bağlanabilir,
 ama varsayılan kapalı. Yani NemoClaw'a verilen iş, kuralların uygulanmasının beklenmediği iş
 olmalı.
+
+---
+
+## Kural kapısı
+
+Kurallar yalnız istemde durmaz; ölçülebilir olan her kural mekanik olarak da zorlanır.
+`kurallar/*.md` dosyalarının sonundaki "Mekanik denetim" tablosu hangi satırın kapıda, hangisinin
+`spark-denetci` incelemesinde olduğunu söyler. Kapı üç yerde durur ve üçü aynı betiktir
+(`roller/denetim/kural_kapisi.py`, saf Python):
+
+| Yer | Ne zaman | Ne bakar |
+|---|---|---|
+| git kancaları | her commit ve itme; makinede ve Canvas kabında | dal adı, `.env`, sır taraması, ruff (biçim, tip ipucu, hata yönetimi, yapı), test dosyası kuralları, shellcheck, uzun tire, commit mesajı, zorla itme |
+| `spark kural pr` | PR açılmadan ve birleştirilmeden önce | üsttekilerin hepsi, `pytest` yeşil mi, PR açıklamasında üç başlık ve çalıştırılan komut |
+| CI | GitHub'da PR açılınca | aynı kapı, `.kural/` kopyasıyla |
+
+Makinede `core.hooksPath` bütün depoları kapıya bağlar: insanın commit'i de Claude Code'un commit'i
+de aynı kapıdan geçer. Canvas kabı aynı dizini `/opt/spark-denetim` olarak görür ve `GIT_CONFIG_*`
+ile aynı kancalara bağlanır; ruff ve shellcheck ikilileri de o dizinde durduğu için kapta ayrıca
+kurulum gerekmez.
+
+Her bulgu kural dosyasını ve bölümünü söyler, gerekçesiz bulgu yoktur:
+
+```
+kural kapısı: 3 engelleyici, 1 uyarı → kapı KAPALI
+  ✗ kod-standartlari.md › Hata yönetimi   src/app.py:7          Do not use bare `except`  (E722)
+  ✗ test-kurallari.md › Biçim             tests/test_app.py:5   test adı ne yaptığını söylemiyor: test_1
+  ✗ pr-kurallari.md › Commit              commit mesajı         ilk satır küçük harfle başlamalı
+```
+
+Kaçış yolu var ama kayıtlı: `KURAL_KAPISI_ATLA=1 git commit` kapıyı bir kerelik atlar; kim, hangi
+dal, ne zaman `denetim/atlama.log` dosyasına yazılır ve `spark kural durum` gösterir. `git
+--no-verify` kancaları geçer, PR kapısı ve CI aynı denetimi yeniden koşturur.
+
+Projeye CI ve PR şablonu: `spark kural kur <proje>`. CI vault'u okuyamadığı için kural kopyası
+`.kural/` altına konur; kopya vault'tan farklıysa kapı uyarır. Ayar kuralların yanında durur
+(`kurallar/denetim/ruff.toml`): kural değişince önce metin, sonra ayar değişir, ikisi aynı klasörde
+olduğu için birlikte eskimezler.
+
+Kapı 13 senaryoluk bir deneme deposunda gerçek git kancalarıyla test edildi: `main` üzerinde
+commit, boş `except`, kodda AWS anahtarı, `.env`, `test_1`, üç iddialı test, gerekçesiz `skip`,
+testte `datetime.now`, uzun tire, soru başlık, büyük harfli commit mesajı, 60 karakter, amend
+sonrası `--force`, başlıksız PR açıklaması. Hepsi durdu; düzeltilmiş halleri geçti.
+
+---
+
+## Anahtarlar, bütçe ve model izni
+
+Kapının bir veritabanı var (`sk-litellm-db`, Postgres). Kurulum dört anahtar üretir ve `.env`
+içine yazar:
+
+| Anahtar | Kim kullanır | Modeller | Günlük bütçe |
+|---|---|---|---|
+| `KEY_INSAN` | terminaldeki Claude Code, yani sen | hepsi, fable dahil | yok |
+| `KEY_CANVAS` | Agent Canvas ve içindeki Claude Code | haiku, sonnet, opus, `claude-*` | 20M token |
+| `KEY_NEMOCLAW` | NemoClaw kabı | aynı | aynı |
+| `KEY_A2A` | A2A köprüsü | aynı | aynı |
+
+İki sonuç var. Birincisi, **otomasyon fable'ı açamaz.** llama-swap'ta fable dışlayıcıdır,
+açıldığında günlük üç katman düşer; bir otomasyonun bunu tetiklemesi eş zamanlı çalışan diğer
+ajanların modelini altından çekerdi. Kapı bu isteğe 403 döner, insan anahtarı geçer. İkincisi,
+**döngüye giren ajan durur.** Bütçe dolunca kapı 429 döner, makine bütün gün meşgul kalmaz. Yerel
+modelin parası olmadığı için maliyet nominal tutulur, 1 $ = 1M token; bütçe günlük sıfırlanır
+(`OTOMASYON_GUNLUK_MTOKEN`, varsayılan 20).
+
+`spark anahtarlar` harcamayı, kalan bütçeyi ve model iznini gösterir. Kurulumun doğrulama adımı
+canvas anahtarıyla fable isteyip 403 gördüğünü raporlar. Anahtar üretilemezse herkes ana
+anahtarla devam eder ve doğrulama bunu açıkça eksik yazar; sessizce "çalışıyor" demez.
+
+Bu mekanizma sahte arka uçlu bir kapıda uçtan uca doğrulandı: model izni 403, bütçe aşımı 429,
+`claude-*` jokeri, `all-proxy-models` ve iki dağıtım arasında yük dağıtımı.
 
 ---
 

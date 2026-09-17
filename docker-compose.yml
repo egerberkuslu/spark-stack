@@ -43,13 +43,39 @@ x-health: &health
 services:
 
   # ── kapı ──────────────────────────────────────────────────────────────────
+  # ── Kapı veritabanı · ajan başına anahtar, bütçe, harcama defteri ───────
+  #  Tek master_key yerine her çalışma zamanı kendi anahtarıyla bağlanır;
+  #  otomasyon anahtarlarında fable yok ve günlük token bütçesi var.
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: sk-litellm-db
+    profiles: [demo, daily, fable, swap, canvas, a2a, extras]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD:-litellm}
+      POSTGRES_DB: litellm
+    volumes:
+      - ${AI_ROOT:-/srv/ai}/data/litellm-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ghcr.io/berriai/litellm-database:main-latest
     container_name: sk-litellm
     profiles: [demo, daily, fable, swap, canvas, a2a, extras]
     restart: unless-stopped
     ports: ["${GATEWAY_BIND:-127.0.0.1}:4000:4000"]
     extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      # Veritabanı: ajan başına anahtar, bütçe ve harcama defteri burada durur
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:-litellm}@litellm-db:5432/litellm
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-sk-salt-degistir}
+    depends_on:
+      litellm-db: {condition: service_healthy}
     volumes:
       - ${AI_ROOT:-/srv/ai}/compose/litellm.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--port", "4000"]
@@ -86,8 +112,14 @@ services:
       # ACP alt ajanları (Claude Code) yerel kapıya baksın. Host'taki .bashrc
       # bloğuyla aynı ikili: bazı sürümler API_KEY, bazıları AUTH_TOKEN okuyor.
       ANTHROPIC_BASE_URL: http://litellm:4000
-      ANTHROPIC_API_KEY: ${LITELLM_KEY:-sk-spark}
-      ANTHROPIC_AUTH_TOKEN: ${LITELLM_KEY:-sk-spark}
+      ANTHROPIC_API_KEY: ${KEY_CANVAS:-${LITELLM_KEY:-sk-spark}}
+      ANTHROPIC_AUTH_TOKEN: ${KEY_CANVAS:-${LITELLM_KEY:-sk-spark}}
+      # Kural kapısı: kaptaki git de aynı kancalardan geçer (GIT_CONFIG_* git 2.31+)
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.hooksPath
+      GIT_CONFIG_VALUE_0: /opt/spark-denetim/hooks
+      SPARK_DENETIM_BIN: /opt/spark-denetim/bin
+      SPARK_KURALLAR: /vault/kurallar
     volumes:
       - ${AI_ROOT:-/srv/ai}/data/canvas:/home/openhands/.openhands
       - ${CANVAS_PROJECTS:-/srv/ai/data/projects}:/projects
@@ -101,6 +133,8 @@ services:
       - ${AI_ROOT:-/srv/ai}/data/canvas/agents-skills:/home/openhands/.agents/skills:ro
       # claude-obsidian ürün kökü: skill'ler betikleri buradan çağırır
       - ${AI_ROOT:-/srv/ai}/claude-obsidian:/opt/claude-obsidian:ro
+      # Kural kapısı: betik, kancalar ve ruff/shellcheck ikilileri
+      - ${AI_ROOT:-/srv/ai}/denetim:/opt/spark-denetim:ro
 
   # ── A2A köprüsü · rolleri protokolle dışarı aç ────────────────────────────
   #  Roller (spark-kod/test/denetci) Agent2Agent protokolüyle adreslenebilir
@@ -121,7 +155,7 @@ services:
       A2A_ROLES_DIR: /roles
       A2A_RULES_DIR: /vault/kurallar
       A2A_GATEWAY_URL: http://litellm:4000/v1
-      A2A_GATEWAY_KEY: ${LITELLM_KEY:-sk-spark}
+      A2A_GATEWAY_KEY: ${A2A_KEY:-${LITELLM_KEY:-sk-spark}}
       A2A_PORT: "8400"
       A2A_BASE_URL: ${A2A_BASE_URL:-http://localhost:8400}
     command: ["python", "/srv/server.py"]

@@ -37,3 +37,21 @@ Sır kodda durmaz. Ortam değişkeni ya da sır deposu kullanılır; `.env` depo
 
 Anaconda yerine proje sanal ortamı (`.venv/`). Biçimlendirme `black`, içe aktarma sırası
 `isort`. Tip ipucu yeni yazılan her fonksiyonda zorunlu, eski koda dokunurken eklenir.
+
+## Mekanik denetim
+
+Aşağıdaki satırlar kural kapısında kendiliğinden denetlenir: commit, itme ve PR bu kapıdan
+geçmeden ilerlemez. Kapıya sığmayan kurallar `spark-denetci` incelemesinde okunarak bakılır.
+
+| Kural | Nasıl denetlenir | Kim |
+|---|---|---|
+| Boş `except`, yutulan istisna, bağlamsız yeniden fırlatma | ruff E722, S110, BLE001, B904 | kapı |
+| Elli satırı geçen fonksiyon, dört seviyeden derin girinti | ruff PLR0915 (50 ifade), PLR1702 (4 blok), C901 | kapı |
+| Kodda sır, `.env` depoda | ruff S105 S106 S107, kapının sır taraması; `.env` dosyası engellenir | kapı |
+| Tip ipucu, black biçimi, isort sırası | ruff ANN, `ruff format --check`, ruff I | kapı |
+| Tek harfli ad, PEP8 adlandırma | ruff E741, N | kapı |
+| Kabuk betiklerinde gerçek hata | shellcheck, uyarı düzeyi (`KURAL_KAPISI_SHELLCHECK=info` ile sıkılaşır) | kapı |
+| İngilizce ad, kısaltma yasağı, Türkçe yorum | okunarak | spark-denetci |
+| Yeni bağımlılık sorulur, sınırda doğrulama, hata mesajı içeriği | okunarak | spark-denetci |
+
+Ayar dosyası bu klasörde: `denetim/ruff.toml`. Kural değişince önce bu metin, sonra o dosya değişir.

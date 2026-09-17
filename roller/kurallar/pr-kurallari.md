@@ -35,3 +35,18 @@ Gönderilmiş commit yeniden yazılmaz (`amend`, `rebase` yok).
 Engelleyici bulgu gerekçesiz yazılmaz; hangi kuralın hangi satırda çiğnendiği gösterilir.
 
 Ajan PR açar, **birleştirmez**. Birleştirme kararı insanındır.
+
+## Mekanik denetim
+
+| Kural | Nasıl denetlenir | Kim |
+|---|---|---|
+| Küçük harf, sonda nokta yok, 60 karakter | commit-msg kancası | kapı |
+| `main` üzerinde çalışılmaz, dal adı `tür/iş` biçiminde | pre-commit kancası | kapı |
+| Gönderilmiş commit yeniden yazılmaz | pre-push: uzaktaki commit yerelin atası değilse itme durur | kapı |
+| Üç başlık ve çalıştırılan komut | PR kapısı açıklamayı okur (`gh` ya da CI) | kapı |
+| Tek değişiklik, "neden" anlatımı, inceleme sınıfları | okunarak | spark-denetci |
+| Birleştirme insanındır | `spark kural pr` çıktısı yeşil olmadan birleştirme yapılmaz | insan |
+
+Kapı bir kerelik `KURAL_KAPISI_ATLA=1` ile atlanabilir; her atlama tarih, kullanıcı ve dalla
+`denetim/atlama.log` dosyasına yazılır ve raporda söylenir. `git --no-verify` kancaları geçer ama
+PR kapısı ve CI aynı denetimi yeniden koşturur; kaçış yolu değildir.

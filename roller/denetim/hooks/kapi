@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Kural kapısı kanca köprüsü. core.hooksPath bu dizini gösterir; her kanca
+# önce kapıdan geçer, sonra deponun kendi kancası varsa o da çalışır.
+#
+# kural_kapisi.py şu sırayla aranır: SPARK_DENETIM, bu dizinin üstü,
+# $AI_ROOT/denetim, /opt/spark-denetim (Canvas kabı).
+set -uo pipefail
+HOOK="${KAPI_HOOK:?kanca adı gerekli}"
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+GATE=""
+for candidate in "${SPARK_DENETIM:-/nonexistent}/kural_kapisi.py" "$HERE/../kural_kapisi.py" \
+                 "${AI_ROOT:-/srv/ai}/denetim/kural_kapisi.py" /opt/spark-denetim/kural_kapisi.py; do
+  [[ -f "$candidate" ]] && { GATE="$candidate"; break; }
+done
+INPUT=""
+[[ "$HOOK" == pre-push ]] && INPUT="$(cat)"
+if [[ -n "$GATE" ]]; then
+  case "$HOOK" in
+    pre-commit) python3 "$GATE" commit || exit 1 ;;
+    commit-msg) python3 "$GATE" commit-msg "$1" || exit 1 ;;
+    pre-push)   printf '%s\n' "$INPUT" | python3 "$GATE" push || exit 1 ;;
+  esac
+else
+  echo "kural kapısı bulunamadı; kanca atlandı (SPARK_DENETIM ayarla)" >&2
+fi
+# Deponun kendi kancası: core.hooksPath onu gölgeler, biz zincirliyoruz.
+LOCAL="$(git rev-parse --git-path hooks 2>/dev/null)/$HOOK"
+if [[ -x "$LOCAL" && "$(readlink -f "$LOCAL")" != "$HERE/$HOOK" ]]; then
+  if [[ "$HOOK" == pre-push ]]; then printf '%s\n' "$INPUT" | exec "$LOCAL" "$@"; fi
+  exec "$LOCAL" "$@"
+fi
+exit 0

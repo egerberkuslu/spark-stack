@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+KAPI_HOOK=commit-msg exec "$(dirname "$(readlink -f "$0")")/kapi" "$@"

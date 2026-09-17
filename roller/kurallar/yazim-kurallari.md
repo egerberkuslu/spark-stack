@@ -36,3 +36,11 @@ Komut, dosya yolu, değişken adı ve kod her zaman İngilizce ve olduğu gibi y
 Doğrulanmamış bir şey "tamam" diye raporlanmaz.
 
 Bir iş yarım kaldıysa nerede kaldığı ve devam etmek için gereken komut yazılır.
+
+## Mekanik denetim
+
+| Kural | Nasıl denetlenir | Kim |
+|---|---|---|
+| Uzun tire yok | eklenen satırlarda U+2014 taranır: belge, kod yorumu, kabuk | kapı |
+| Başlık soru değil | `?` ile biten `.md` başlığı durur | kapı |
+| Ton, madde imi, sayı kaynağı, Türkçe terim, ajan raporu | okunarak | spark-denetci |

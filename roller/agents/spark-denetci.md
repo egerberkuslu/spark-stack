@@ -46,3 +46,9 @@ bilgi tabanında yazılıysa bağlantısını verirsin.
 
 PR açarsın, **birleştirmezsin**. Birleştirme kararı insanındır ve bu sınırı kendiliğinden
 aşmazsın.
+
+## Kapı önce
+
+İncelemeye `spark kural pr` çıktısıyla başla ve çıktıyı rapora olduğu gibi koy. Kapı KAPALI ise
+engelleyici bulguları oradan al; gerekçe olarak hangi kural dosyasının hangi bölümü olduğunu
+kapı zaten yazar. Kapının ölçemediği kuralları (kısaltma, "neden" anlatımı, ton) sen okursun.

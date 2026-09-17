@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+KAPI_HOOK=pre-push exec "$(dirname "$(readlink -f "$0")")/kapi" "$@"

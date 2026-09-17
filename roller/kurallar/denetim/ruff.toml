@@ -1,0 +1,30 @@
+# kod-standartlari.md'nin mekanik karşılığı. Her seçim bir bölüme bağlıdır;
+# kural değişince önce .md, sonra burası değişir. Kapı bu dosyayı
+# --config ile verir, yani projenin kendi ruff ayarı kuralı ezemez.
+line-length = 88          # black varsayılanı; "biçimlendirme black"
+target-version = "py311"
+preview = true            # PLR1702 (girinti derinliği) önizleme kuralı
+
+[lint]
+select = [
+  "E722", "B904", "BLE001", "S110",   # Hata yönetimi: boş except, bağlamsız yeniden fırlatma, yutulan istisna
+  "S105", "S106", "S107",             # Sınırlar: kodda sır
+  "PLR0915", "PLR1702", "C901",       # Yapı: elli satır, dört seviye girinti
+  "ANN",                              # Python: tip ipucu zorunlu
+  "I",                                # Python: içe aktarma sırası (isort)
+  "E741", "N",                        # Dil ve isimlendirme
+]
+ignore = ["ANN401"]       # Any bir tip ipucudur; kural ipucu ister, tipi seçmez
+
+[lint.pylint]
+max-statements = 50       # "elli satırı geçen fonksiyon parçalanır" (ifade sayısıyla ölçülür)
+max-nested-blocks = 4     # "dört seviyeden derin girinti"
+
+[lint.mccabe]
+max-complexity = 12
+
+[lint.per-file-ignores]
+"test_*.py" = ["ANN", "S105", "S106", "S107"]   # testte tip ipucu ve sahte sır serbest
+"*_test.py" = ["ANN", "S105", "S106", "S107"]
+"tests/**"  = ["ANN", "S105", "S106", "S107"]
+"conftest.py" = ["ANN"]

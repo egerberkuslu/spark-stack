@@ -34,3 +34,15 @@ Test takımı yeşil olmadan iş bitmiş sayılmaz. "Bende çalışıyordu" kabu
 ajan komutu çalıştırır ve çıktıyı rapora koyar.
 
 Atlanan (skip) test bir borçtur: neden atlandığı ve ne zaman açılacağı yazılır.
+
+## Mekanik denetim
+
+| Kural | Nasıl denetlenir | Kim |
+|---|---|---|
+| Yeni modülün testi var | eklenen her `.py` için `test_<ad>.py` aranır; yoksa commit durur, değişen modülde uyarı verir | kapı |
+| Test adı ne yaptığını söyler | `test_1`, `test_case_*` ve iki kelimeden kısa adlar durur | kapı |
+| Bir test tek şey doğrular | üç ve daha çok iddia içeren test durur | kapı |
+| Gerçek saat ve ağ testte yok | `datetime.now`, `time.time`, `requests`, `httpx`, `urlopen`, `socket` taranır; taklit kütüphanesi görülürse uyarıya düşer | kapı |
+| Atlanan testin gerekçesi | `skip` süslemesi `reason=` olmadan durur | kapı |
+| Takım yeşil olmadan iş bitmez | PR kapısı `pytest` koşturur, kırmızıysa PR açılmaz | kapı |
+| Sınır durumları, davranış okuma, bağımsızlık | okunarak | spark-denetci |

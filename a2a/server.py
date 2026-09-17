@@ -183,16 +183,14 @@ def call_gateway(model: str, system: str, user: str) -> str:
     # bozulmasın diye ayrı bir rol kopyası tutmuyoruz.
     if model.startswith("litellm_proxy/"):
         model = model.split("/", 1)[1]
-    payload = json.dumps(
-        {
-            "model": model,
-            "max_tokens": MAX_TOKENS,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }
-    ).encode()
+    payload = json.dumps({
+        "model": model,
+        "max_tokens": MAX_TOKENS,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
     req = urllib.request.Request(
         f"{GATEWAY}/chat/completions",
         data=payload,
@@ -322,7 +320,7 @@ def handle_cancel_task(params: dict) -> dict:
 
 
 class JsonRpcError(Exception):
-    def __init__(self, code: int, message: str):
+    def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -354,10 +352,12 @@ CARD_SUFFIX = "/.well-known/agent-card.json"
 class Handler(BaseHTTPRequestHandler):
     server_version = "spark-stack-a2a/1.0"
 
-    def log_message(self, fmt, *args):  # sessiz; docker logs zaten satırı taşır
+    def log_message(
+        self, fmt: str, *args: object
+    ) -> None:  # sessiz; docker logs zaten satırı taşır
         print(f"{self.address_string()} {fmt % args}", flush=True)
 
-    def _send(self, code: int, payload: dict):
+    def _send(self, code: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -369,7 +369,7 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/agents/([^/]+)" + re.escape(suffix) + r"$", path)
         return m.group(1) if m else None
 
-    def do_GET(self):  # noqa: N802
+    def do_GET(self) -> None:  # noqa: N802
         roles = load_roles()
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path == CARD_SUFFIX:
@@ -385,7 +385,7 @@ class Handler(BaseHTTPRequestHandler):
             )
         return self._send(404, {"error": "bulunamadı"})
 
-    def do_POST(self):  # noqa: N802
+    def do_POST(self) -> None:  # noqa: N802
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
@@ -428,13 +428,14 @@ class Handler(BaseHTTPRequestHandler):
                 )
         except JsonRpcError as exc:
             return self._send(200, self._err(rid, exc.code, exc.message))
-        except Exception as exc:  # beklenmedik; istemciye JSON-RPC hatası dönmeli
+        # Sunucu sınırı: beklenmedik hata istemciye JSON-RPC hatası olarak döner, yutulmaz
+        except Exception as exc:  # noqa: BLE001
             return self._send(200, self._err(rid, INTERNAL_ERROR, str(exc)))
 
         return self._send(200, {"jsonrpc": JSONRPC, "id": rid, "result": result})
 
     @staticmethod
-    def _err(rid, code: int, message: str) -> dict:
+    def _err(rid: str | int | None, code: int, message: str) -> dict:
         return {
             "jsonrpc": JSONRPC,
             "id": rid,

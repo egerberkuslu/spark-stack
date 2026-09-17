@@ -14,9 +14,12 @@
 #    spark models                        katman → model eşlemesi ve durum
 #    spark ask "soru" [katman]           hızlı test (varsayılan opus)
 #    spark update                        imajları güncelle
+#    spark kural [pr|dosya|kur <proje>|durum]  kural kapısı: PR denetimi, projeye CI, durum
+#    spark anahtarlar                    ajan anahtarları: harcama, bütçe, model izni
 # =============================================================================
 set -uo pipefail
 AI_ROOT="${AI_ROOT:-/srv/ai}"
+KULLANICI_DIZINI="$PWD"   # kural kapısı kullanıcının durduğu depoda koşar
 cd "$AI_ROOT/compose" 2>/dev/null || { echo "kurulum bulunamadı: $AI_ROOT/compose"; exit 1; }
 set -a; [[ -f .env ]] && source .env; set +a
 # Kullanıcı docker grubuna yeni eklendiyse bu oturumda sokete erişemez; sudo'ya düş.
@@ -302,6 +305,41 @@ case "${1:-status}" in
       | jq -r '.choices[0].message.content // .error.message'
     ;;
 
+  kural)
+    GATE="$AI_ROOT/denetim/kural_kapisi.py"
+    [[ -f "$GATE" ]] || { echo "kural kapısı kurulu değil — bash install.sh --resume"; exit 1; }
+    export SPARK_DENETIM_BIN="$AI_ROOT/denetim/bin" SPARK_KURALLAR="${OBSIDIAN_VAULT:-$HOME/vault}/kurallar"
+    ALT="${2:-pr}"; shift; [[ $# -gt 0 ]] && shift
+    case "$ALT" in
+      pr|dosya) cd "$KULLANICI_DIZINI" && exec python3 "$GATE" "$ALT" "$@" ;;
+      kur)
+        P="$(cd "$KULLANICI_DIZINI" && cd "${1:?proje dizini gerekli}" && pwd)" || exit 1
+        K="$SPARK_KURALLAR"
+        # CI kuralları vault'tan okuyamaz; kopya .kural/ altında durur, kapı eskiyince uyarır
+        mkdir -p "$P/.kural/denetim" "$P/.github/workflows"
+        cp "$K"/*.md "$P/.kural/" && cp "$K/denetim/ruff.toml" "$P/.kural/denetim/" && cp "$GATE" "$P/.kural/"
+        cp "$AI_ROOT/denetim/github-workflow.yml" "$P/.github/workflows/kural-kapisi.yml"
+        [[ -f "$P/.github/pull_request_template.md" ]] || cp "$AI_ROOT/denetim/pull_request_template.md" "$P/.github/"
+        echo "kural kopyası ve CI kuruldu: $P/.kural · .github/workflows/kural-kapisi.yml · PR şablonu"
+        echo "kural değişince tazele: spark kural kur ${1}" ;;
+      durum)
+        echo "kanca yolu : $(git config --global core.hooksPath 2>/dev/null || echo yok)"
+        echo "ruff       : $("$AI_ROOT/denetim/bin/ruff" --version 2>/dev/null || echo yok)"
+        echo "shellcheck : $("$AI_ROOT/denetim/bin/shellcheck" --version 2>/dev/null | sed -n 's/^version: //p')"
+        echo "kurallar   : $SPARK_KURALLAR"
+        echo "son atlamalar (KURAL_KAPISI_ATLA=1):"
+        tail -5 "$AI_ROOT/denetim/atlama.log" 2>/dev/null | sed 's/^/  /'; [[ -s "$AI_ROOT/denetim/atlama.log" ]] || echo "  yok" ;;
+      *) echo "spark kural [pr [--base main]|dosya <yol>...|kur <proje>|durum]"; exit 1 ;;
+    esac ;;
+  anahtarlar)
+    # Harcama nominal maliyetle sayılıyor: 1 $ = 1M token, yani spend doğrudan M token.
+    for k in KEY_INSAN KEY_CANVAS KEY_NEMOCLAW KEY_A2A; do
+      v="${!k:-}"
+      if [[ -z "$v" || "$v" == "${LITELLM_KEY:-sk-spark}" ]]; then printf '  %-9s yok (ana anahtar kullanılıyor)\n' "${k#KEY_}"; continue; fi
+      curl -sf --max-time 10 "http://127.0.0.1:4000/key/info?key=$v" -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" \
+        | python3 -c 'import sys,json;i=json.load(sys.stdin)["info"];b=i.get("max_budget");print("  %-9s harcama %.3fM token · bütçe %s · modeller %s"%(i.get("key_alias","?"),i.get("spend") or 0,("%gM/gün"%b) if b else "sınırsız",", ".join(i.get("models") or ["hepsi"])))' \
+        || printf '  %-9s kapıya sorulamadı\n' "${k#KEY_}"
+    done ;;
   update) $DC --profile daily --profile fable --profile swap --profile canvas --profile a2a --profile extras pull ;;
 
   *) sed -n '4,17p' "$0" | sed 's/^# \?//' ;;

@@ -31,7 +31,7 @@
 #  Modeller, sunucular, veritabanları, MCP sunucuları — hepsi konteynerde.    #
 ###############################################################################
 set -Eeuo pipefail
-VERSION="3.0-ajanlar"
+VERSION="3.1-yonetisim"
 START_TS=$(date +%s)
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -84,7 +84,7 @@ send(){ DONE_WEIGHT=$((DONE_WEIGHT+${STEP_WEIGHT[$CUR]})); echo "${STEP_KEYS[$CU
 # atlamak zaten yanlış olurdu. --resume yalnız durum dosyasını sıfırlamaz.
 
 spin(){ local m="$1"; shift; local tmp; tmp=$(mktemp)
-  ( "$@" >"$tmp" 2>&1 ) & local pid=$! mk='-\|/' i=0 t0=$(date +%s)
+  ( "$@" >"$tmp" 2>&1 ) & local pid=$! mk='-\|/' i=0 t0; t0=$(date +%s)
   while kill -0 $pid 2>/dev/null; do
     printf '\r  %s│%s %s %s %s(%ss)%s ' "$D" "$R" "${mk:i++%4:1}" "$m" "$D" $(( $(date +%s)-t0 )) "$R"; sleep 0.4
   done; wait $pid; local rc=$?; printf '\r\033[K'; cat "$tmp" >>"$LOGFILE"; rm -f "$tmp"; return $rc; }
@@ -189,6 +189,7 @@ if [[ "$MODE" == uninstall ]]; then
   rm -f "$HOME/.claude/agents"/ajans-*.md
   rm -rf "$HOME/.claude/skills/sirket-kurallari"
   echo "  roller ve sirket-kurallari skill'i kaldırıldı"
+  [[ "$(git config --global core.hooksPath 2>/dev/null)" == "$AI_ROOT/denetim/hooks" ]] && git config --global --unset core.hooksPath
   sudo rm -rf "$AI_ROOT"; sudo rm -f /usr/local/bin/spark /usr/local/bin/wiki
   sed -i '/# >>> spark-stack >>>/,/# <<< spark-stack <<</d' ~/.bashrc
   VK="${OBSIDIAN_VAULT:-$HOME/vault}"
@@ -280,7 +281,9 @@ fi
 
 TOKSRC=""
 [[ -n "${HF_TOKEN:-}" ]] && TOKSRC="komut satırı/ortam"
+# shellcheck source=/dev/null
 [[ -z "${HF_TOKEN:-}" && -f "$SRC_DIR/.env" ]] && { set -a; source "$SRC_DIR/.env"; set +a; [[ -n "${HF_TOKEN:-}" ]] && TOKSRC="./.env"; }
+# shellcheck source=/dev/null
 [[ -z "${HF_TOKEN:-}" && -f "$ENVF" ]] && { set -a; source "$ENVF"; set +a; [[ -n "${HF_TOKEN:-}" ]] && TOKSRC="kayıtlı"; }
 if [[ -z "${HF_TOKEN:-}" || "$HF_TOKEN" == hf_xxx ]]; then
   cat <<TH
@@ -380,6 +383,7 @@ else
     | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
   APT_UPDATED=0; apt_up
   spin "nvidia-container-toolkit kuruluyor" apt_get nvidia-container-toolkit || die "toolkit kurulamadı"
+  # shellcheck disable=SC2024  # log dosyası kullanıcıya ait, sudo yönlendirmeyi etkilemese de olur
   sudo nvidia-ctk runtime configure --runtime=docker >>"$LOGFILE" 2>&1 || die "nvidia-ctk yapılandırması başarısız"
   spin "docker yeniden başlatılıyor" sudo systemctl restart docker
   sleep 3; detect_docker
@@ -427,8 +431,13 @@ mkdir -p "$VAULT_PATH"
 rnd(){ openssl rand -hex "${1:-32}" 2>/dev/null || head -c"${1:-32}" /dev/urandom | od -An -tx1 | tr -d ' \n'; }
 grep -q '^OH_SECRET_KEY=' "$ENVF" || echo "OH_SECRET_KEY=$(rnd 32)" >> "$ENVF"
 grep -q '^CANVAS_KEY='    "$ENVF" || echo "CANVAS_KEY=$(rnd 24)"    >> "$ENVF"
+grep -q '^LITELLM_DB_PASSWORD=' "$ENVF" || echo "LITELLM_DB_PASSWORD=$(rnd 24)" >> "$ENVF"
+grep -q '^LITELLM_SALT_KEY='    "$ENVF" || echo "LITELLM_SALT_KEY=sk-salt-$(rnd 24)" >> "$ENVF"
 chmod 600 "$ENVF"
-set -a; source "$ENVF"; set +a
+set -a
+# shellcheck source=/dev/null
+source "$ENVF"
+set +a
 # ── Ortak sözleşme: kurallar vault'ta, roller ajanlarda ────────────────────
 #  Kuralların metni tek yerde (bilgi tabanında) durur. Skill ve rol dosyaları
 #  onun metnini KOPYALAMAZ, yerini gösterir — kopya eskir, tek kaynak eskimez.
@@ -445,6 +454,9 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   done
   if (( YENI )); then ok "kural taslakları bilgi tabanına kondu: $KURALLAR ($YENI dosya)"
   else ok "kurallar zaten var, üzerine yazılmadı: $KURALLAR"; fi
+  # Mekanik denetim ayarı kuralların yanında durur: kural değişince o da orada değişir
+  mkdir -p "$KURALLAR/denetim"
+  [[ -f "$KURALLAR/denetim/ruff.toml" ]] || cp "$SRC_DIR/roller/kurallar/denetim/ruff.toml" "$KURALLAR/denetim/"
 
   # Skill: kuralların yerini söyler, metnini taşımaz
   mkdir -p "$HOME/.claude/skills/sirket-kurallari"
@@ -476,6 +488,17 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   done
   ok "$ROL rol kuruldu — host: ~/.claude/agents · Canvas: $CANVAS_AGENTS"
   log "   Canvas her konuşmada bu dizini kendiliğinden tarar (~/.openhands/agents)"
+
+  # ── Kural kapısı: kurallar mekanik olarak zorlanır ────────────────────────
+  #  Git kancaları (pre-commit, commit-msg, pre-push) ve PR kapısı. Makinedeki
+  #  her depo core.hooksPath ile kapıdan geçer; Canvas kabı aynı dizini
+  #  /opt/spark-denetim olarak görür, ruff ve shellcheck ikilileri oradadır.
+  if bash "$SRC_DIR/roller/denetim/kur.sh" "$AI_ROOT" "$SRC_DIR/roller/denetim" >>"$LOGFILE" 2>&1; then
+    ok "kural kapısı kuruldu — git kancaları: $AI_ROOT/denetim/hooks (core.hooksPath)"
+    log "   PR kapısı: spark kural pr · projeye CI: spark kural kur <proje>"
+  else
+    warn "kural kapısı kurulamadı — sonra: bash $SRC_DIR/roller/denetim/kur.sh $AI_ROOT $SRC_DIR/roller/denetim"
+  fi
 
   # Kural skill'i Canvas tarafında da dursun (yönlendiren ajan için)
   CSK="$DATA/canvas/skills/installed/sirket-kurallari"
@@ -598,7 +621,8 @@ pull_model(){ # pull_model <katman>
   ok "$t indi — $(du -sh "$MODELS/$t"|cut -f1)"
 
   # Spekülatif decode taslak modeli varsa (ör. sonnet için DSpark) onu da çek
-  local draft_var="${1^^}_DRAFT" draft="${!draft_var:-}"
+  local draft_var="${1^^}_DRAFT"
+  local draft="${!draft_var:-}"
   if [[ -n "$draft" && ! -f "$MODELS/$t-draft/config.json" ]]; then
     log "$t taslak modeli ← $draft  (~1 GB)"
     dk run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
@@ -641,17 +665,29 @@ tier_base(){
   else echo "http://host.docker.internal:$(tier_port "$1")/v1"; fi
 }
 {
+  # Nominal maliyet: yerel modelin parası yok ama bütçe token sayarak çalışsın
+  # diye 1e-6 $/token yazıyoruz; kapıda 1 $ = 1M token demek.
+  MALIYET='input_cost_per_token: 0.000001, output_cost_per_token: 0.000001'
   echo "model_list:"
   for t in haiku sonnet opus fable; do
     cat <<YAML
   - model_name: $t
-    litellm_params: {model: openai/$t, api_base: $(tier_base "$t"), api_key: x}
+    litellm_params: {model: openai/$t, api_base: $(tier_base "$t"), api_key: x, $MALIYET}
 YAML
+    # Eş makineler: aynı katman adı, başka adres → kapı isteği dağıtır (SPARK_PEERS=spark2:8081,spark3:8081)
+    IFS=',' read -ra PEERS <<< "${SPARK_PEERS:-}"
+    for peer in "${PEERS[@]}"; do
+      [[ -n "$peer" ]] || continue
+      cat <<YAML
+  - model_name: $t
+    litellm_params: {model: openai/$t, api_base: http://$peer/v1, api_key: x, $MALIYET}
+YAML
+    done
   done
   cat <<YAML
   # Araçlar "claude-sonnet-4-5" gibi isimler gönderirse ana modele düşsün
   - model_name: "claude-*"
-    litellm_params: {model: openai/$FALLBACK_MAIN, api_base: $(tier_base "$FALLBACK_MAIN"), api_key: x}
+    litellm_params: {model: openai/$FALLBACK_MAIN, api_base: $(tier_base "$FALLBACK_MAIN"), api_key: x, $MALIYET}
 
 litellm_settings: {drop_params: true, modify_params: true, request_timeout: 900, num_retries: 1}
 router_settings:
@@ -725,6 +761,45 @@ send
 # ── 6 SERVİSLER AÇILIYOR ────────────────────────────────────────────────────
 #  Sıra: haiku (en hızlı açılan) → sonnet → opus. İlk ikisi açıldığında
 #  sistem zaten kullanılabilir; opus arkadan yetişir.
+# ── Ajan başına anahtar ────────────────────────────────────────────────────
+#  Kapının artık veritabanı var: her çalışma zamanı kendi anahtarıyla bağlanır.
+#  insan: bütün katmanlar (fable dahil). canvas/nemoclaw/a2a: fable YOK (açılınca
+#  günlük katmanları düşürür) ve günlük token bütçesi var (döngüye giren ajan
+#  bütçesi bitince durur, 429). Anahtarlar veritabanında kalıcı; kopyaları .env'de.
+anahtar_uret(){ # <alias> <modeller json> [bütçe]
+  local body="{\"key_alias\":\"$1\",\"models\":$2,\"metadata\":{\"spark\":\"$VERSION\"}"
+  [[ -n "${3:-}" ]] && body+=",\"max_budget\":$3,\"budget_duration\":\"1d\",\"rpm_limit\":120"
+  body+="}"
+  curl -sf --max-time 20 -X POST http://127.0.0.1:4000/key/generate \
+    -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" -H 'Content-Type: application/json' \
+    -d "$body" | jq -r '.key // empty'
+}
+anahtar_gecerli(){ [[ -n "${1:-}" ]] && curl -sf --max-time 10 "http://127.0.0.1:4000/key/info?key=$1" \
+    -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" >/dev/null 2>&1; }
+anahtarlari_uret(){
+  local OTO BUTCE k
+  OTO="[$(printf '"%s",' "${TIERS[@]}")\"claude-*\"]"   # fable ALL_TIERS'ta, burada yok; claude-* ana katmana düşer
+  BUTCE="${OTOMASYON_GUNLUK_MTOKEN:-20}"
+  if anahtar_gecerli "${KEY_CANVAS:-}" && anahtar_gecerli "${KEY_INSAN:-}"; then
+    ok "ajan anahtarları zaten var (.env: KEY_INSAN KEY_CANVAS KEY_NEMOCLAW KEY_A2A)"; return 0
+  fi
+  KEY_INSAN="$(anahtar_uret insan '["all-proxy-models"]')"
+  KEY_CANVAS="$(anahtar_uret canvas "$OTO" "$BUTCE")"
+  KEY_NEMOCLAW="$(anahtar_uret nemoclaw "$OTO" "$BUTCE")"
+  KEY_A2A="$(anahtar_uret a2a "$OTO" "$BUTCE")"
+  if [[ -z "$KEY_INSAN" || -z "$KEY_CANVAS" || -z "$KEY_NEMOCLAW" || -z "$KEY_A2A" ]]; then
+    warn "ajan anahtarları üretilemedi — kapı veritabanı ayakta mı? (spark logs litellm-db)"
+    log "   herkes ana anahtarla devam ediyor; bütçe ve fable yasağı DEVRE DIŞI"
+    KEY_INSAN="${LITELLM_KEY:-sk-spark}"; KEY_CANVAS="$KEY_INSAN"; KEY_NEMOCLAW="$KEY_INSAN"; KEY_A2A="$KEY_INSAN"
+    return 0
+  fi
+  for k in KEY_INSAN KEY_CANVAS KEY_NEMOCLAW KEY_A2A; do
+    sed -i "/^$k=/d" "$ENVF"; echo "$k=${!k}" >> "$ENVF"
+  done
+  sed -i '/^A2A_KEY=/d' "$ENVF"; echo "A2A_KEY=$KEY_A2A" >> "$ENVF"
+  ok "ajan anahtarları üretildi: insan (fable dahil) · canvas · nemoclaw · a2a (fable yok, ${BUTCE}M token/gün)"
+  log "   harcama ve kalan bütçe: spark anahtarlar"
+}
 sbegin 6
 if (( WITH_SWAP )); then
   # Konteynerler oluşturulur ama başlatılmaz; açma işini llama-swap üstlenir.
@@ -758,6 +833,7 @@ else
   done
   wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
 fi
+anahtarlari_uret
 if (( WITH_CANVAS )); then
   CP="${CANVAS_PORT:-8300}"
   if DC --profile canvas up -d >>"$LOGFILE" 2>&1; then
@@ -778,7 +854,7 @@ if (( WITH_CANVAS )); then
     CAPI="http://127.0.0.1:$CP/api/settings"
     SEED=$(cat <<JSON
 {"agent_settings_diff":{"enable_sub_agents":true,
- "llm":{"model":"litellm_proxy/$FALLBACK_MAIN","base_url":"http://litellm:4000","api_key":"${LITELLM_KEY:-sk-spark}"}}}
+ "llm":{"model":"litellm_proxy/$FALLBACK_MAIN","base_url":"http://litellm:4000","api_key":"${KEY_CANVAS:-${LITELLM_KEY:-sk-spark}}"}}}
 JSON
 )
     if curl -sf -X PATCH "$CAPI" -H "X-Session-API-Key: ${CANVAS_KEY:-}" \
@@ -794,7 +870,7 @@ JSON
       fi
     else
       warn "Canvas ayarı tohumlanamadı — panelden elle: Settings → Agent → Sub-agents açık,"
-      log "   Settings → LLM: litellm_proxy/$FALLBACK_MAIN · http://litellm:4000 · ${LITELLM_KEY:-sk-spark}"
+      log "   Settings → LLM: litellm_proxy/$FALLBACK_MAIN · http://litellm:4000 · ${KEY_CANVAS:-${LITELLM_KEY:-sk-spark}}"
     fi
   else
     warn "Agent Canvas açılmadı — spark logs canvas"
@@ -824,8 +900,8 @@ cat >> ~/.bashrc <<EOF
 # >>> spark-stack >>>
 export PATH="\$HOME/.local/bin:\$PATH"
 export ANTHROPIC_BASE_URL=http://localhost:4000
-export ANTHROPIC_AUTH_TOKEN=${LITELLM_KEY:-sk-spark}
-export ANTHROPIC_API_KEY=${LITELLM_KEY:-sk-spark}
+export ANTHROPIC_AUTH_TOKEN=${KEY_INSAN:-${LITELLM_KEY:-sk-spark}}
+export ANTHROPIC_API_KEY=${KEY_INSAN:-${LITELLM_KEY:-sk-spark}}
 export ANTHROPIC_DEFAULT_OPUS_MODEL=$FALLBACK_MAIN
 export ANTHROPIC_DEFAULT_SONNET_MODEL=$FALLBACK_MAIN
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku
@@ -833,7 +909,7 @@ export ANTHROPIC_MODEL=$FALLBACK_MAIN
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 # <<< spark-stack <<<
 EOF
-export ANTHROPIC_BASE_URL=http://localhost:4000 ANTHROPIC_AUTH_TOKEN="${LITELLM_KEY:-sk-spark}" ANTHROPIC_API_KEY="${LITELLM_KEY:-sk-spark}"
+export ANTHROPIC_BASE_URL=http://localhost:4000 ANTHROPIC_AUTH_TOKEN="${KEY_INSAN:-${LITELLM_KEY:-sk-spark}}" ANTHROPIC_API_KEY="${KEY_INSAN:-${LITELLM_KEY:-sk-spark}}"
 ok "Claude Code yerel kapıya bağlandı (bulut kapalı)"
 send
 
@@ -1019,7 +1095,7 @@ sbegin 11
 if (( WITH_NEMOCLAW == 0 )); then
   log "atlandı — sonradan:  bash install.sh --with-nemoclaw --resume"
 else
-  NC_KEY="${LITELLM_KEY:-sk-spark}"
+  NC_KEY="${KEY_NEMOCLAW:-${LITELLM_KEY:-sk-spark}}"
   NC_URL="http://localhost:4000/v1"
   log "kaynak : https://www.nvidia.com/nemoclaw.sh  (NVIDIA/NemoClaw · Apache-2.0)"
   log "kap    : $NEMOCLAW_SANDBOX"
@@ -1096,6 +1172,20 @@ v_no(){ warn "$1"; EKSIK=$((EKSIK+1)); }
 
 KSAY=$(ls -1 "$KURALLAR"/*.md 2>/dev/null | wc -l)
 (( KSAY )) && v_ok "kurallar: $KSAY dosya · $KURALLAR" || v_no "kural dosyası yok: $KURALLAR"
+if [[ -n "${KEY_CANVAS:-}" && "$KEY_CANVAS" != "${LITELLM_KEY:-sk-spark}" ]]; then
+  FRC=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://127.0.0.1:4000/v1/chat/completions \
+        -H "Authorization: Bearer $KEY_CANVAS" -H 'Content-Type: application/json' \
+        -d '{"model":"fable","max_tokens":1,"messages":[{"role":"user","content":"x"}]}')
+  [[ "$FRC" == 403 ]] && v_ok "yönetişim: otomasyon anahtarı fable'a erişemiyor (403)" \
+                      || v_no "yönetişim: canvas anahtarı fable'a $FRC döndü, 403 bekleniyordu"
+else
+  v_no "ajan anahtarları yok — herkes ana anahtarla; bütçe ve fable yasağı devre dışı"
+fi
+if [[ -x "$AI_ROOT/denetim/bin/ruff" && "$(git config --global core.hooksPath 2>/dev/null)" == "$AI_ROOT/denetim/hooks" ]]; then
+  v_ok "kural kapısı: kancalar bağlı · ruff $("$AI_ROOT/denetim/bin/ruff" --version 2>/dev/null | cut -d' ' -f2) · shellcheck $([[ -x "$AI_ROOT/denetim/bin/shellcheck" ]] && echo var || echo yok)"
+else
+  v_no "kural kapısı eksik — bash $SRC_DIR/roller/denetim/kur.sh $AI_ROOT $SRC_DIR/roller/denetim"
+fi
 
 RSAY=$(ls -1 "$HOME/.claude/agents"/spark-*.md 2>/dev/null | wc -l)
 (( RSAY == 3 )) && v_ok "roller (Claude Code): $RSAY/3" || v_no "roller eksik (Claude Code): $RSAY/3"
@@ -1165,7 +1255,7 @@ cat <<FIN
       İlk açılışta Settings → LLM'e bir kez şunları gir (env ile ayarlanamıyor):
         Model     litellm_proxy/${FALLBACK_MAIN}
         Base URL  http://litellm:4000
-        API Key   ${LITELLM_KEY:-sk-spark}
+        API Key   ${KEY_CANVAS:-${LITELLM_KEY:-sk-spark}}
 
       Claude Code'u alt ajan yapmak için: Settings → Agent → Preset: Claude Code
       ${D}kap zaten bizim kapıya bakıyor (ANTHROPIC_BASE_URL), abonelik token'ı verme${R}
