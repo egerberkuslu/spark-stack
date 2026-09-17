@@ -573,13 +573,71 @@ send
 
 # ── 3 İMAJLAR ───────────────────────────────────────────────────────────────
 sbegin 3
-for img in "$VLLM_IMAGE" ghcr.io/berriai/litellm:main-latest; do
-  spin "indiriliyor: ${img##*/}" dk pull "$img" && ok "${img##*/}" || die "imaj indirilemedi: $img"
+# Docker API akışını katman bazında toplayıp tek satır ilerleme basan yardımcı
+mkdir -p "$AI_ROOT/bin"
+cat > "$AI_ROOT/bin/imaj-ilerleme.py" <<'PYEOF'
+import json, sys, time
+
+# Docker /images/create akisi: her satir bir JSON olay. Katman basina
+# current/total toplanir; yuzde, hiz, kalan sure ve katman sayisi basilir.
+label = sys.argv[1] if len(sys.argv) > 1 else "imaj"
+cur, tot, seen, done = {}, {}, set(), set()
+t0 = prev_t = time.time(); prev_b = 0; last = 0.0; rate = 0.0
+
+def fmt(b):
+    return f"{b/1e9:.1f} GB" if b >= 1e9 else f"{b/1e6:.0f} MB"
+
+for line in sys.stdin:
+    try:
+        ev = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if "error" in ev:
+        sys.stderr.write("\r\033[K"); print("HATA:", ev["error"]); sys.exit(1)
+    st, lid, pd = ev.get("status", ""), ev.get("id"), ev.get("progressDetail") or {}
+    if lid: seen.add(lid)
+    if st == "Downloading" and pd.get("total"):
+        tot[lid] = pd["total"]; cur[lid] = pd.get("current", 0)
+    elif st in ("Download complete", "Pull complete", "Already exists") and lid:
+        if lid in tot: cur[lid] = tot[lid]
+        if st != "Download complete": done.add(lid)
+    now = time.time()
+    if now - last < 0.5:
+        continue
+    last = now
+    b, T = sum(cur.values()), sum(tot.values())
+    inst = (b - prev_b) / max(now - prev_t, 1e-6); prev_b, prev_t = b, now
+    rate = rate * 0.7 + inst * 0.3 if rate else inst
+    pct = min(100, 100 * b / T) if T else 0
+    eta = (T - b) / rate if rate > 0 and T else 0
+    sys.stderr.write(f"\r  \033[2m│\033[0m ⏳ {label:<24} %{pct:3.0f}  {fmt(b)} / {fmt(T)}  {rate/1e6:.1f} MB/s"
+                     f"  kalan {eta:.0f}s  \033[2m(katman {len(done)}/{len(seen)})\033[0m   ")
+    sys.stderr.flush()
+sys.stderr.write("\r\033[K")
+T = sum(tot.values())
+print(f"{fmt(T)} indi, {time.time()-t0:.0f}s" if T else "zaten güncel")
+PYEOF
+pull_image(){ # <imaj[:etiket]> → Docker API ile çeker, ilerlemeyi basar
+  local img=$1 name tag rc son tmp
+  if [[ "${img##*/}" == *:* ]]; then name="${img%:*}"; tag="${img##*:}"; else name="$img"; tag="latest"; fi
+  local -a sock=(curl -sN --unix-socket /var/run/docker.sock)
+  [[ "$DKR" == sudo* ]] && sock=(sudo curl -sN --unix-socket /var/run/docker.sock)
+  tmp=$(mktemp)
+  "${sock[@]}" -X POST "http://localhost/images/create?fromImage=${name}&tag=${tag}" 2>>"$LOGFILE" \
+    | python3 "$AI_ROOT/bin/imaj-ilerleme.py" "${img##*/}" >"$tmp"
+  rc=${PIPESTATUS[1]}
+  son="$(tail -1 "$tmp")"; rm -f "$tmp"
+  _w "imaj ${img}: ${son}"
+  if (( rc == 0 )) && dk image inspect "$img" >/dev/null 2>&1; then ok "${img##*/}: ${son}"; return 0; fi
+  # API akışı bozulduysa klasik yol (ilerleme yok)
+  spin "indiriliyor: ${img##*/}" dk pull "$img" && ok "${img##*/}"
+}
+for img in "$VLLM_IMAGE" ghcr.io/berriai/litellm-database:main-latest postgres:16-alpine; do
+  pull_image "$img" || die "imaj indirilemedi: $img"
 done
 if (( WITH_SWAP )); then
   SWAP_IMG="ghcr.io/mostlygeek/llama-swap:${LLAMASWAP_TAG:-unified-cuda13}"
-  spin "indiriliyor: ${SWAP_IMG##*/}" dk pull "$SWAP_IMG" && ok "${SWAP_IMG##*/}" \
-    || die "llama-swap imajı indirilemedi: $SWAP_IMG"
+  pull_image "$SWAP_IMG" || die "llama-swap imajı indirilemedi: $SWAP_IMG"
   # llama-swap'in Docker API istemcisi yok, komutu düz exec ediyor. Konteynerleri
   # başlatabilmesi için statik docker CLI ikilisi imajın içine bağlanır.
   if [[ -x "$AI_ROOT/bin/docker" ]]; then
@@ -595,14 +653,66 @@ if (( WITH_SWAP )); then
 fi
 if (( WITH_CANVAS )); then
   CANVAS_IMG="ghcr.io/openhands/agent-canvas:${CANVAS_TAG:-1.19.0}"
-  spin "indiriliyor: ${CANVAS_IMG##*/}" dk pull "$CANVAS_IMG" && ok "${CANVAS_IMG##*/}" \
-    || die "Agent Canvas imajı indirilemedi: $CANVAS_IMG"
+  pull_image "$CANVAS_IMG" || die "Agent Canvas imajı indirilemedi: $CANVAS_IMG"
   mkdir -p "${CANVAS_PROJECTS:-$HOME/projects}"
   ok "proje klasörü: ${CANVAS_PROJECTS:-$HOME/projects}  (ajan yalnız burayı görür)"
 fi
 ((WITH_EXTRAS)) && for img in ghcr.io/open-webui/open-webui:main qdrant/qdrant:latest; do
-  spin "indiriliyor: ${img##*/}" dk pull "$img" || warn "$img indirilemedi"; done
+  pull_image "$img" || warn "$img indirilemedi"; done
 send
+
+# ── İndirme ilerlemesi ─────────────────────────────────────────────────────
+#  Modeller: toplam boyut HuggingFace API'sinden alınır, hedef klasör iki
+#  saniyede bir ölçülür (du -sb); yüzde, hız ve kalan süre tek satırda
+#  yenilenir. hf_transfer yarım dosyaları da klasörün içine yazdığı için ölçüm
+#  gerçek ilerlemeyi gösterir. İmajlar: Docker API'sinin JSON akışı katman
+#  bazında toplanır (current/total), aynı biçimde basılır.
+insan_boyut(){ awk -v b="${1:-0}" 'BEGIN{ if (b>=1e9) printf "%.1f GB", b/1e9; else printf "%.0f MB", b/1e6 }'; }
+sure_metni(){ local s=${1:-0}
+  if (( s >= 3600 )); then printf '%dsa %ddk' $((s/3600)) $((s%3600/60))
+  elif (( s >= 60 )); then printf '%ddk %ds' $((s/60)) $((s%60))
+  else printf '%ds' "$s"; fi; }
+hf_toplam_bayt(){ # <repo> → bayt; API cevap vermezse 0
+  local -a auth=(); [[ -n "${HF_TOKEN:-}" ]] && auth=(-H "Authorization: Bearer $HF_TOKEN")
+  curl -sf --max-time 30 "${auth[@]}" "https://huggingface.co/api/models/$1/tree/main?recursive=true" 2>/dev/null \
+    | jq -r '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add // 0' 2>/dev/null || echo 0; }
+klasor_izle(){ # <etiket> <klasör> <toplam bayt>  (arka planda çalışır, öndeki iş bitince öldürülür)
+  set +e; trap - ERR
+  local l=$1 d=$2 T=${3:-0} t0 b0 t1 b1 dt inst rate=0 pct eta
+  t0=$(date +%s); b0=$(du -sb "$d" 2>/dev/null | cut -f1); b0=${b0:-0}
+  local bp=$b0 tp=$t0
+  while :; do
+    sleep 2
+    b1=$(du -sb "$d" 2>/dev/null | cut -f1); b1=${b1:-0}; t1=$(date +%s)
+    dt=$(( t1 - tp )); (( dt < 1 )) && dt=1
+    inst=$(( (b1 - bp) / dt )); (( inst < 0 )) && inst=0
+    if (( rate == 0 )); then rate=$inst; else rate=$(( (rate * 3 + inst) / 4 )); fi   # üstel ortalama
+    if (( T > 0 )); then
+      pct=$(( b1 * 100 / T )); (( pct > 100 )) && pct=100
+      eta=$(( rate > 0 ? (T - b1) / rate : 0 )); (( eta < 0 )) && eta=0
+      printf '\r  %s│%s ⏳ %-9s %%%3d  %s / %s  %s/s  kalan %s  %s(%s)%s   ' "$D" "$R" "$l" "$pct" \
+        "$(insan_boyut "$b1")" "$(insan_boyut "$T")" "$(insan_boyut "$rate")" "$(sure_metni "$eta")" \
+        "$D" "$(sure_metni $((t1 - t0)))" "$R"
+    else
+      printf '\r  %s│%s ⏳ %-9s %s indi  %s/s  %s(%s · toplam bilinmiyor)%s   ' "$D" "$R" "$l" \
+        "$(insan_boyut "$b1")" "$(insan_boyut "$rate")" "$D" "$(sure_metni $((t1 - t0)))" "$R"
+    fi
+    bp=$b1; tp=$t1
+  done; }
+hf_indir(){ # <etiket> <repo> <hedef klasör>  → ilerleme satırıyla indirir
+  local l=$1 repo=$2 d=$3 T t0 t1 b wpid rc
+  T=$(hf_toplam_bayt "$repo"); mkdir -p "$d"
+  t0=$(date +%s)
+  klasor_izle "$l" "$d" "$T" & wpid=$!
+  dk run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+    -v "$MODELS":/models --entrypoint bash "$VLLM_IMAGE" \
+    -c "hf download '$repo' --local-dir /models/${d##*/} --max-workers ${HF_WORKERS:-16}" >>"$LOGFILE" 2>&1
+  rc=$?
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; printf '\r\033[K'
+  t1=$(( $(date +%s) - t0 )); (( t1 < 1 )) && t1=1
+  b=$(du -sb "$d" 2>/dev/null | cut -f1); b=${b:-0}
+  INDIRME_OZETI="$(insan_boyut "$b"), ort. $(insan_boyut $(( b / t1 )))/s, $(sure_metni "$t1")"
+  return $rc; }
 
 # ── Model indirme yardımcısı ────────────────────────────────────────────────
 #  Konteyner içinden indiriyoruz: makineye python/pip kurmuyoruz.
@@ -612,25 +722,18 @@ pull_model(){ # pull_model <katman>
   if [[ -f "$MODELS/$t/config.json" ]]; then
     ok "$t = $(tier_repo "$t"): zaten indirilmiş ($(du -sh "$MODELS/$t"|cut -f1))"; return 0; fi
   log "$t ← $repo  ($(tier_size "$t"))"
-  log "   ayrı terminalden izle:  watch -n5 du -sh $MODELS/$t"
-  dk run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
-    -v "$MODELS":/models --entrypoint bash "$VLLM_IMAGE" \
-    -c "hf download '$repo' --local-dir /models/$t --max-workers ${HF_WORKERS:-16}" 2>&1 \
-    | tee -a "$LOGFILE" | tail -1
+  hf_indir "$t" "$repo" "$MODELS/$t" || true
   [[ -f "$MODELS/$t/config.json" ]] || die "$t indirilemedi ($repo)"
-  ok "$t indi: $(du -sh "$MODELS/$t"|cut -f1)"
+  ok "$t indi: $INDIRME_OZETI"
 
   # Spekülatif decode taslak modeli varsa (ör. sonnet için DSpark) onu da çek
   local draft_var="${1^^}_DRAFT"
   local draft="${!draft_var:-}"
   if [[ -n "$draft" && ! -f "$MODELS/$t-draft/config.json" ]]; then
     log "$t taslak modeli ← $draft  (~1 GB)"
-    dk run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
-      -v "$MODELS":/models --entrypoint bash "$VLLM_IMAGE" \
-      -c "hf download '$draft' --local-dir /models/$t-draft --max-workers ${HF_WORKERS:-16}" 2>&1 \
-      | tee -a "$LOGFILE" | tail -1
+    hf_indir "$t-taslak" "$draft" "$MODELS/$t-draft" || true
     [[ -f "$MODELS/$t-draft/config.json" ]] || die "$t taslak modeli indirilemedi ($draft)"
-    ok "$t taslak indi: spekülatif decode aktif"
+    ok "$t taslak indi: $INDIRME_OZETI, spekülatif decode aktif"
   fi
 }
 

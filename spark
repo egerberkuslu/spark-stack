@@ -276,11 +276,39 @@ case "${1:-status}" in
       fable)  REPO="$FABLE_REPO"  ;;
       *) echo "bilinmeyen katman: $M  (haiku|sonnet|opus|fable)"; exit 1 ;;
     esac
-    echo ">> $M katmanı ← $REPO"
+    # İlerleme: toplam boyut HF API'sinden, ölçüm klasörden (install.sh ile aynı yöntem)
+    insan_boyut(){ awk -v b="${1:-0}" 'BEGIN{ if (b>=1e9) printf "%.1f GB", b/1e9; else printf "%.0f MB", b/1e6 }'; }
+    sure_metni(){ local s=${1:-0}
+      if (( s >= 3600 )); then printf '%dsa %ddk' $((s/3600)) $((s%3600/60))
+      elif (( s >= 60 )); then printf '%ddk %ds' $((s/60)) $((s%60))
+      else printf '%ds' "$s"; fi; }
+    HEDEF="$AI_ROOT/models/$M"; mkdir -p "$HEDEF"
+    TOPLAM=$(curl -sf --max-time 30 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} \
+      "https://huggingface.co/api/models/$REPO/tree/main?recursive=true" 2>/dev/null \
+      | jq -r '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add // 0' 2>/dev/null || echo 0)
+    echo ">> $M katmanı ← $REPO  ($( (( TOPLAM > 0 )) && insan_boyut "$TOPLAM" || echo 'boyut bilinmiyor'))"
+    T0=$(date +%s)
+    ( set +e; rate=0; bp=$(du -sb "$HEDEF" 2>/dev/null | cut -f1); bp=${bp:-0}; tp=$T0
+      while :; do sleep 2
+        b=$(du -sb "$HEDEF" 2>/dev/null | cut -f1); b=${b:-0}; t=$(date +%s); dt=$(( t - tp )); (( dt < 1 )) && dt=1
+        inst=$(( (b - bp) / dt )); (( inst < 0 )) && inst=0; if (( rate == 0 )); then rate=$inst; else rate=$(( (rate * 3 + inst) / 4 )); fi
+        if (( TOPLAM > 0 )); then pct=$(( b * 100 / TOPLAM )); (( pct > 100 )) && pct=100
+          eta=$(( rate > 0 ? (TOPLAM - b) / rate : 0 )); (( eta < 0 )) && eta=0
+          printf '\r   ⏳ %-8s %%%3d  %s / %s  %s/s  kalan %s  %s(%s)%s   ' "$M" "$pct" "$(insan_boyut "$b")" \
+            "$(insan_boyut "$TOPLAM")" "$(insan_boyut "$rate")" "$(sure_metni "$eta")" "$D" "$(sure_metni $((t - T0)))" "$R"
+        else
+          printf '\r   ⏳ %-8s %s indi  %s/s  %s(%s)%s   ' "$M" "$(insan_boyut "$b")" "$(insan_boyut "$rate")" "$D" "$(sure_metni $((t - T0)))" "$R"
+        fi; bp=$b; tp=$t; done ) & WPID=$!
     $DKR run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
       -v "$AI_ROOT/models":/models --entrypoint bash "$VLLM_IMAGE" -c \
-      "hf download '$REPO' --local-dir /models/$M" || exit 1
-    echo ">> bitti: $(du -sh "$AI_ROOT/models/$M" | cut -f1)"
+      "hf download '$REPO' --local-dir /models/$M --max-workers ${HF_WORKERS:-16}" >"$AI_ROOT/models/.$M.log" 2>&1
+    RC=$?; kill "$WPID" 2>/dev/null; wait "$WPID" 2>/dev/null; printf '\r\033[K'
+    SURE=$(( $(date +%s) - T0 )); (( SURE < 1 )) && SURE=1
+    B=$(du -sb "$HEDEF" 2>/dev/null | cut -f1); B=${B:-0}
+    if (( RC != 0 )) || [[ ! -f "$HEDEF/config.json" ]]; then
+      echo ">> $M indirilemedi (rc=$RC); log: $AI_ROOT/models/.$M.log"; exit 1
+    fi
+    echo ">> $M indi: $(insan_boyut "$B"), ort. $(insan_boyut $(( B / SURE )))/s, $(sure_metni "$SURE")"
     ;;
 
   models)

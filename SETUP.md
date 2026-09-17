@@ -80,9 +80,10 @@ Model adımında hangi katmanın hangi modeli indirdiği açıkça listelenir:
   │  sonnet  nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 ~20 GB  hızlı NVIDIA · ~108 tok/s
   │  opus    unsloth/Qwen3.8-27B-NVFP4                        ~20 GB  Qwen kalite · ciddi kod
   │
-  │ ✓ haiku indi: 24.9G
-  │ ✓ sonnet indi: 19.6G
-  │ ✓ sonnet taslak indi: spekülatif decode aktif
+  │ ⏳ haiku     % 42  11.2 GB / 26.5 GB  38 MB/s  kalan 6dk 40s  (4dk 55s)
+  │ ✓ haiku indi: 26.5 GB, ort. 41 MB/s, 10dk 48s
+  │ ✓ sonnet indi: 21.6 GB, ort. 40 MB/s, 9dk 2s
+  │ ✓ sonnet taslak indi: 1.2 GB, ort. 35 MB/s, 34s, spekülatif decode aktif
   │ opus ← unsloth/Qwen3.8-27B-NVFP4  (~20 GB)
 └─ [████████████████············]  58%  1840s · toplam 34:12 · kalan 8 adım
 ```
@@ -111,6 +112,11 @@ Beklenen çıktı:
 
   GPU belleği : 78420 MiB, 122570 MiB
 ```
+
+Model inerken tek satır kendini yeniler: yüzde, inen / toplam, anlık hız ve kalan süre. Toplam
+boyut HuggingFace API'sinden alınır; API cevap vermezse yalnız inen miktar ve hız gösterilir. İmaj
+çekiminde aynı satır Docker'ın katman ilerlemesinden üretilir ve kaç katmanın bittiğini de yazar.
+Yukarıdaki hız ve süre değerleri biçimi göstermek içindir, gerçek değerler bağlantına bağlıdır.
 
 İlk kullanım:
 
