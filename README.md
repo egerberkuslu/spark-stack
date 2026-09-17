@@ -56,22 +56,35 @@ bağlam. Hibrit dikkat: Gated DeltaNet + Qwen Sparse Attention.
 
 Checkpoint diskte 133 GB, yani Spark'ın 128 GB'ına bakınca sığmıyor gibi durur. Sığmasının sebebi
 şu: o boyutun 51 GB'ı n-gram gömme tablosu (PLE) ve o tablo saf bir arama yapısı, bir token yalnız
-16 satırına dokunuyor. Tabloyu NVMe'den `mmap` ile sunduğunda **yerleşik ağırlık ~76 GB'a iniyor**
-ve havuzun kalanı KV cache'e gidiyor. Ölçülen sonuç: **~37-45 tok/s** (kodda üst uçta), 1M'in
-üzerinde token'lık KV havuzu, ilk yükleme ~13 dakika.
+16 satırına dokunuyor. Tabloyu NVMe'den `mmap` ile sunduğunda **yerleşik ağırlık ~75 GB'a iniyor**
+ve havuzun kalanı KV cache'e gidiyor.
+
+Reçetenin kendi ölçümü, tek akış ve açgözlü çözme ile: **~34 tok/s** (varsayılan `nvfp4` düzeni),
+hazırlık yapılırsa **~37 tok/s**. Prefill 2400-2900 tok/s, KV havuzu ~680k token, prefix cache
+isabetinde ilk token 14 saniye yerine ~1,4 saniye. Karşılaştırma için eski `fable` ~20 tok/s idi.
 
 > **Bu yetenek upstream vLLM'de yok.** `fable` katmanı bu yüzden kendi imajını kullanır: resmî
-> `vllm/vllm-openai:qwen38-flash-next` önizlemesinin üstüne PLE yamasını ekleyen yerel bir yapı
+> `vllm/vllm-openai:qwen38-flash-next` önizlemesinin üstüne on iki yama ekleyen yerel bir yapı
 > ([blazux/qwen3.8-Flash-DGX](https://github.com/blazux/qwen3.8-Flash-DGX), Apache-2.0). Kurulum
-> depoyu çekip imajı kendisi kurar, bir dakika sürer. Aynı yama GB10'da prefix cache'i ve
-> belirlenimli top-k'yi de düzeltiyor. İmaj kurulmazsa katman açılmaz; kurulum bunu söyler.
+> depoyu çekip imajı kendisi kurar, bir dakika sürer. Yamalar yalnız PLE'yi değil, GB10'da prefix
+> cache'i bozan bir blok boyu hatasını ve sparse attention'daki belirlenimsiz top-k'yi de
+> düzeltiyor. İmaj kurulmazsa katman açılmaz; kurulum bunu söyler.
 >
 > Checkpoint'in `quant_algo` alanı `MIXED_PRECISION`: yalnız MoE uzmanları 4-bit, dikkat ve gömme
 > katmanları BF16/FP8. "NVFP4" adına bakıp 60 GB beklemek yanıltıcı olur.
->
-> Yamalı imajı istemiyorsan `.env` sonundaki alternatifler stok vLLM ile çalışır:
-> `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` (80 GB, ~20 tok/s) ya da
-> `unsloth/Qwen3.5-122B-A10B-NVFP4` (79 GB).
+
+**Henüz doğrulanmadı.** Reçete ağırlıkları HuggingFace önbellek düzeninde tutuyor, biz ise diğer
+katmanlarla aynı olsun diye `/srv/ai/models/fable` altında düz klasörde tutuyoruz. Yama vLLM'in
+yükleyicisinin içinde çalıştığı için yolun biçimine bakmaması beklenir, ama bunu Spark'ta
+koşmadan bilemeyiz. Açılışta takılırsa ilk bakılacak yer burası.
+
+**İsteğe bağlı hızlandırma.** Reçetenin `prepare-hybrid.sh` betiği yan katmanları bf16'dan fp8'e
+çeviriyor: bir kerelik ~10 dakika, +13 GB disk, karşılığında %20 çözme hızı ve %8 KV havuzu.
+Kurulum bunu yapmıyor; isteyen `/srv/ai/qwen38-flash-dgx` altında elle çalıştırır.
+
+Yamalı imajı hiç istemiyorsan `.env` sonundaki alternatifler stok vLLM ile çalışır:
+`nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` (80 GB, ~20 tok/s) ya da
+`unsloth/Qwen3.5-122B-A10B-NVFP4` (79 GB).
 
 **Depo kuralı:** yalnızca birinci taraf (NVIDIA, Qwen) ya da büyük kuantizasyoncu (Unsloth). Tek kişilik/deneysel depo kullanılmıyor, çünkü bozuk bir kuantizasyon Spark'ta sessizce anlamsız çıktı üretir ve fark etmesi zordur.
 
