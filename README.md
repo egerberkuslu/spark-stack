@@ -121,6 +121,18 @@ bash install.sh --token hf_xxx          # + opus                    ~65 GB    30
 bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    50-70 dk
 ```
 
+**Tam indirme.** Her şeyi isteyen komut `--all`: dört katman, llama-swap, Agent Canvas, A2A
+köprüsü, NemoClaw kabı, katalog rolleri, bilgi tabanı ve ekstralar. Bilgi tabanı motorunu
+değiştirmek istersen tek bayrak ekliyorsun:
+
+```bash
+bash install.sh --all --token hf_xxx                    # bilgi tabanı: obsidian (varsayılan)
+bash install.sh --all --bilgi graphify --token hf_xxx   # bilgi tabanı: graphify
+```
+
+Süre çoğunlukla indirmede geçiyor, 1 Gbit hatta yaklaşık bir saat. İndirme boyunca her katman
+için yüzde, hız ve kalan süre tek satırda görünür.
+
 ![Kurulum profilleri](docs/figures/spark-kurulum-profilleri.png)
 
 | Bayrak | Açıklama |
@@ -128,7 +140,8 @@ bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    5
 | `--token hf_xxx` | **Zorunlu.** HuggingFace anahtarı; verilmezse kurulum sorar |
 | `--with-fable` | Dördüncü katman |
 | `--with-extras` | Open WebUI, Qdrant, Whisper |
-| `--with-wiki` | Obsidian + claude-obsidian bilgi tabanı |
+| `--with-wiki` | Bilgi tabanı (varsayılan motor: obsidian) |
+| `--bilgi MOTOR` | Motor seçimi: `obsidian` (kaynak→wiki) veya `graphify` (kod→graf) |
 | `--with-nemoclaw` | NVIDIA NemoClaw ajan kabı (`--all` içinde) |
 | `--with-swap` | llama-swap: katmanı istek anında aç (`--all` içinde) |
 | `--with-canvas` | Agent Canvas ajan kontrol merkezi (`--all` içinde) |
@@ -136,8 +149,71 @@ bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    5
 | `--with-agency` | agency-agents kataloğu + 15 uzman rol (`--all` içinde) |
 | `--projects PATH` | Canvas ajanının göreceği klasör (varsayılan `~/projects`) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
+| `--sandbox AD` | NemoClaw kabının adı (varsayılan `spark`) |
+| `--no-swap` · `--no-canvas` · `--no-a2a` · `--no-nemoclaw` · `--no-agency` | `--all` içinden tek tek çıkar |
 | `--resume` | Yarım kalan kurulumu sürdür |
 | `--status` / `--uninstall` | Durum / kaldırma |
+
+---
+
+## Kesilirse devam etmek
+
+Kurulumu Ctrl+C ile kesebilirsin, terminali kapatabilirsin, makine kapanabilir. Üçünde de
+kaldığın yerden devam edersin:
+
+```bash
+bash install.sh --resume
+```
+
+`--token` tekrar gerekmez: anahtar ilk koşuda `.env` içine yazıldığı için oradan okunur.
+
+**Kesince ne oluyor.** İndirme konteynerde koşuyor ve Docker istemcisini öldürmek konteyneri
+durdurmuyor; bu yüzden her indirme konteyneri `sk-indir-<katman>` adıyla açılıyor ve kesintide
+adıyla durduruluyor. Ekranda ne yaptığını yazar:
+
+```
+  Kesildi.
+  indirme konteyneri durduruluyor: sk-indir-haiku
+  yarım kalan yerden devam:  bash install.sh --resume
+  ayakta kalan servisler:  spark status   ·  hepsini kapat:  spark down
+```
+
+O ana kadar açılmış servisler bilerek ayakta bırakılır: kapı ve inen katmanlar çalışmaya devam
+eder. Bir sonraki koşu da başlarken kalan `sk-indir-*` konteynerlerini arayıp kapatır, yani
+makine kapandıysa ya da eski bir sürümle kesildiysen elle temizlemen gerekmez.
+
+**Yarım inen dosyalar silinmez.** HuggingFace indirmesi `.cache/huggingface/download/` altındaki
+kayıtlarla kaldığı yerden devam eder, baştan inmez. Tamamlanmış bir katman hiç dokunulmadan
+atlanır:
+
+```
+  ▸ [1/5] haiku: zaten indirilmiş
+    ✓ haiku = unsloth/Qwen3.6-35B-A3B-NVFP4 (26G)
+```
+
+**`--resume` adım atlamaz, hepsini yeniden koşar.** Bu bilerek: her adım tekrar çalıştırılabilir
+yazıldı (kurulu paket atlanır, var olan kural dosyasının üzerine yazılmaz, inen ağırlık tekrar
+inmez) ve sonraki adımlar önceki adımların değişkenlerine bağlı olduğu için atlamak yanlış
+sonuç verirdi. Pratikte tamamlanmış adımlar saniyeler sürer.
+
+**Sonradan parça eklemek de aynı komut.** Kurulum bittikten sonra fikrini değiştirirsen:
+
+```bash
+bash install.sh --with-fable --resume       # dördüncü katmanı ekle
+bash install.sh --bilgi graphify --resume   # bilgi tabanı motorunu değiştir
+bash install.sh --with-canvas --resume      # Agent Canvas ekle
+```
+
+**Aynı anda iki kurulum çalışmaz.** `/srv/ai/install.pid` kilidi var; ikincisi açılmaz ve
+sebebini söyler, birincisinin süren indirmesine de dokunmaz. Kilit normal bitişte de kesintide
+de kalkar.
+
+Ne indi ne inmedi görmek için:
+
+```bash
+spark models            # katman → model eşlemesi ve durum
+du -sh /srv/ai/models/* # disk üzerindeki gerçek boyutlar
+```
 
 ---
 
