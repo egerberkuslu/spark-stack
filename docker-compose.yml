@@ -1,5 +1,5 @@
 # =============================================================================
-#  spark-stack — dört model katmanı + kapı + ekstralar
+#  spark-stack: dört model katmanı + kapı + ekstralar
 #
 #  PROFİLLER (bellek sığsın diye, hepsi aynı anda açılmaz):
 #     demo   → haiku + sonnet            ~45 GB   en hızlı ayağa kalkan
@@ -94,7 +94,7 @@ services:
   #      /projects altına bağladığımız klasörü görür. docker.sock GEREKMEZ.
   #   2) Claude Code, ACP alt ajanı olarak kabın içinde çalışabiliyor (sarmalayıcı
   #      imajda hazır geliyor). Onu da bizim kapımıza bağlıyoruz: ANTHROPIC_BASE_URL
-  #      + ANTHROPIC_API_KEY. Abonelik OAuth token'ı BİLEREK verilmiyor — üst
+  #      + ANTHROPIC_API_KEY. Abonelik OAuth token'ı BİLEREK verilmiyor, çünkü üst
   #      akış belgeleri, base URL ile token'ın birlikte kullanılamayacağını söylüyor.
   #   3) Kendi portu 8000, ama bizde 8000'i sonnet kullanıyor; dışarı CANVAS_PORT'tan
   #      açılır.
@@ -129,7 +129,7 @@ services:
       # Ortak skill dizini: kurallar (tetikleyicisiz .md, her konuşmada tam
       # metin), claude-obsidian'ın 15 skill'i ve host'taki skill'ler burada
       # birleştirilir. install.sh derler; amaç makinede ne varsa kapta da
-      # olması — nereden çalışırsan çalış aynı sistem.
+      # olması: nereden çalışırsan çalış aynı sistem.
       - ${AI_ROOT:-/srv/ai}/data/canvas/agents-skills:/home/openhands/.agents/skills:ro
       # claude-obsidian ürün kökü: skill'ler betikleri buradan çağırır
       - ${AI_ROOT:-/srv/ai}/claude-obsidian:/opt/claude-obsidian:ro

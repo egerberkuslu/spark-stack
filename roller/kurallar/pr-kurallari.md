@@ -6,7 +6,7 @@ Türkçe, emir kipi, küçük harfle başlar: `kullanıcı girişini doğrula`. 
 İlk satır 60 karakteri geçmez.
 
 Bir commit tek bir değişiklik taşır. Biçimlendirme ile davranış değişikliği aynı commit'te
-olmaz — inceleyen ikisini ayırt edemez.
+olmaz, çünkü inceleyen ikisini ayırt edemez.
 
 Commit mesajı **ne** yapıldığını değil **neden** yapıldığını anlatır; ne yapıldığı zaten
 diff'te görünür.
@@ -21,11 +21,11 @@ Gönderilmiş commit yeniden yazılmaz (`amend`, `rebase` yok).
 
 Üç başlık, bu sırayla:
 
-**Ne değişti** — tek paragraf, teknik olmayan biri de anlasın.
+**Ne değişti**: tek paragraf, teknik olmayan biri de anlasın.
 
-**Neden** — hangi sorun, hangi karar. İlgili karar vault'ta yazılıysa bağlantısı verilir.
+**Neden**: hangi sorun, hangi karar. İlgili karar vault'ta yazılıysa bağlantısı verilir.
 
-**Nasıl test edildi** — çalıştırılan komut ve çıktısı. "Test ettim" yeterli değildir.
+**Nasıl test edildi**: çalıştırılan komut ve çıktısı. "Test ettim" yeterli değildir.
 
 ## İnceleme
 

@@ -2,7 +2,7 @@
 """Katalogtan kurulan ajanları bu yığına uyarlar.
 
 agency-agents'ın resmî kurucusu (scripts/install.sh) ajanları Claude Code'un
-dizinine olduğu gibi kopyalar — araçtan bağımsız yazıldıkları için içlerinde ne
+dizinine olduğu gibi kopyalar; araçtan bağımsız yazıldıkları için içlerinde ne
 model adı ne de bizim kurallarımız vardır. Bu betik kurulumdan sonra çalışır ve
 üç şeyi ekler:
 
@@ -83,7 +83,7 @@ Bu ajan genel bir persona olarak yazıldı; aşağıdaki kurallar onun üstünde
 | `{kural_yolu}/yazim-kurallari.md` | doküman, yorum, rapor yazarken |
 
 Kural ile kendi alışkanlığın çelişirse kural kazanır. Test yazman gerekiyorsa `spark-test`,
-denetim gerekiyorsa `spark-denetci` rolüne devret — kimse kendi işini onaylamaz.
+denetim gerekiyorsa `spark-denetci` rolüne devret; kimse kendi işini onaylamaz.
 
 ## Bilgi tabanında araştır
 

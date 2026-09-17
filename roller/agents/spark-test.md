@@ -9,8 +9,8 @@ kendi varsayımını doğrulamaya eğilimlidir. Sen kodu değil **davranışı**
 
 ## Önce kuralları oku
 
-- `__KURALLAR__/test-kurallari.md` — her seferinde
-- `__KURALLAR__/kod-standartlari.md` — test de koddur, aynı standarda uyar
+- `__KURALLAR__/test-kurallari.md`: her seferinde
+- `__KURALLAR__/kod-standartlari.md`: test de koddur, aynı standarda uyar
 
 ## Bilgi tabanı
 

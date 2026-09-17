@@ -12,14 +12,14 @@ cd spark-stack
 bash install.sh --all --token hf_xxx
 ```
 
-`hf_xxx` yerine kendi HuggingFace anahtarını yaz — model ağırlıkları oradan iniyor ve
+`hf_xxx` yerine kendi HuggingFace anahtarını yaz, çünkü model ağırlıkları oradan iniyor ve
 anahtarsız kurulum olmuyor. Ücretsiz almak bir dakika: [huggingface.co](https://huggingface.co)
 → Settings → Access Tokens → Create new token → Type: **Read**.
 
 1 Gbit hatta yaklaşık 50-70 dakika. Adım adım anlatım: **[SETUP.md](SETUP.md)**
 
 Bunu tek kişilik asistan olarak değil, şirketin işlerini yürüten ajan altyapısı olarak
-kuracaksan: **[docs/MIMARI.md](docs/MIMARI.md)** — ajan rolleri, ajan başına anahtar ve
+kuracaksan: **[docs/MIMARI.md](docs/MIMARI.md)**: ajan rolleri, ajan başına anahtar ve
 bütçe, yalıtım seviyeleri, tek makinenin eşzamanlılık tavanı.
 
 ---
@@ -29,13 +29,13 @@ bütçe, yalıtım seviyeleri, tek makinenin eşzamanlılık tavanı.
 | Katman | HuggingFace deposu | Aile | Aktif param. | Kullanım | Bellek | Port |
 |---|---|---|---|---|---|---|
 | `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~25 GB | 8002 |
-| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri — **~108 tok/s** | ~20 GB | 8000 |
-| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri — **varsayılan** | ~20 GB | 8888 |
-| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler — **tek başına çalışır** | ~67 GB | 8001 |
+| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~20 GB | 8000 |
+| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~20 GB | 8888 |
+| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~67 GB | 8001 |
 
 İlk üç katman aynı anda açık durur (~65 GB ağırlık + KV cache). `fable` açıldığında diğerleri kapanır.
 
-Claude Code içinde `/model haiku|sonnet|opus` ile geçilir. Kapalı bir katman istenirse LiteLLM isteği çalışan bir katmana yönlendirir — hata dönmez.
+Claude Code içinde `/model haiku|sonnet|opus` ile geçilir. Kapalı bir katman istenirse LiteLLM isteği çalışan bir katmana yönlendirir, hata dönmez.
 
 ![Katman yönlendirmesi ve düşme zinciri](docs/figures/spark-katman-yonlendirme.png)
 
@@ -53,7 +53,7 @@ Depolar `.env` içinde `HAIKU_REPO`, `SONNET_REPO`, `OPUS_REPO`, `FABLE_REPO` ol
 
 **fable = Nemotron-3-Super.** NVFP4 ile **ön eğitilmiş** (sonradan kuantize değil), MTP dahili. 12B aktif → ~20 tok/s; ajan döngüsü için değil, tek zor soru için.
 
-**Depo kuralı:** yalnızca birinci taraf (NVIDIA, Qwen) ya da büyük kuantizasyoncu (Unsloth). Tek kişilik/deneysel depo kullanılmıyor — bozuk bir kuantizasyon Spark'ta sessizce anlamsız çıktı üretir ve fark etmesi zordur.
+**Depo kuralı:** yalnızca birinci taraf (NVIDIA, Qwen) ya da büyük kuantizasyoncu (Unsloth). Tek kişilik/deneysel depo kullanılmıyor, çünkü bozuk bir kuantizasyon Spark'ta sessizce anlamsız çıktı üretir ve fark etmesi zordur.
 
 **Tüm katmanlar NVFP4 + Marlin.** GB10'da (sm_121) stok CUTLASS FP4 çekirdekleri bozuk çıktı üretir; `.env` içindeki `VLLM_NVFP4_GEMM_BACKEND=marlin` bunu engeller.
 
@@ -65,7 +65,7 @@ Alternatif depolar `.env` sonunda yorum olarak listelenmiştir.
 
 ![spark-stack mimarisi](docs/figures/spark-mimari.png)
 
-Makineye kurulan tek bileşen Claude Code'dur (tek dosyalık CLI, terminalde çalışması gerekiyor). Model sunucuları, kapı, veritabanları ve MCP sunucularının tamamı konteynerde çalışır — sistem Python'una dokunulmaz, aarch64 wheel sorunu yaşanmaz.
+Makineye kurulan tek bileşen Claude Code'dur (tek dosyalık CLI, terminalde çalışması gerekiyor). Model sunucuları, kapı, veritabanları ve MCP sunucularının tamamı konteynerde çalışır. Sistem Python'una dokunulmaz, aarch64 wheel sorunu yaşanmaz.
 
 ---
 
@@ -110,7 +110,7 @@ iki tarafta da aynıdır; ayrıntı [aşağıda](#nereden-çalışırsan-çalı�
 
 ## Kurulum seçenekleri
 
-> **Her kurulum HuggingFace anahtarı ister** — `--demo` dahil, `--all` dahil. Model
+> **Her kurulum HuggingFace anahtarı ister**, `--demo` dahil, `--all` dahil. Model
 > ağırlıkları oradan iniyor, anahtarsız hiçbir katman inmez. Ücretsiz: [huggingface.co](https://huggingface.co)
 > → Settings → Access Tokens → **Create new token** → Type: **Read**. Sonra `hf_` ile başlayan
 > değeri `--token` ile ver; vermezsen kurulum sorar ve `hf_` ile başlamayan bir değeri kabul etmez.
@@ -192,17 +192,17 @@ spark down                  # tümünü durdur
 |---|---|
 | Model katmanları | vLLM, NVFP4, Marlin backend, prefix caching, FP8 KV cache |
 | LiteLLM | Tek adres, Anthropic ↔ OpenAI çevirisi, katman fallback'i, kullanım logu |
-| llama-swap | Katmanı istek anında açar, çakışanı kapatır, boştayı düşürür — `--with-swap` |
+| llama-swap | Katmanı istek anında açar, çakışanı kapatır, boştayı düşürür · `--with-swap` |
 | Claude Code | Yerel kapıya bağlı; telemetri ve bulut erişimi kapalı |
-| MCP sunucuları | filesystem, git, fetch, context7, playwright, memory, sequential-thinking — hepsi konteyner |
+| MCP sunucuları | filesystem, git, fetch, context7, playwright, memory, sequential-thinking, hepsi konteyner |
 | Skill'ler | Superpowers (TDD, sistematik hata ayıklama, plan çıkarma) |
-| Bilgi tabanı | Obsidian + claude-obsidian (15 skill) — `--with-wiki` |
-| Ajan kabı | NVIDIA NemoClaw + OpenShell, model yerel kapıdan — `--with-nemoclaw` |
-| Kontrol merkezi | Agent Canvas: konuşmalar, otomasyonlar, ACP alt ajanları — `--with-canvas` |
-| A2A köprüsü | Rolleri Agent2Agent protokolüyle dışarı açar — `--with-a2a` |
+| Bilgi tabanı | Obsidian + claude-obsidian (15 skill) · `--with-wiki` |
+| Ajan kabı | NVIDIA NemoClaw + OpenShell, model yerel kapıdan · `--with-nemoclaw` |
+| Kontrol merkezi | Agent Canvas: konuşmalar, otomasyonlar, ACP alt ajanları · `--with-canvas` |
+| A2A köprüsü | Rolleri Agent2Agent protokolüyle dışarı açar · `--with-a2a` |
 | Kural kapısı | git kancaları, PR kapısı, CI şablonu; ruff, pytest ve shellcheck kendi sanal ortamında |
 | Kapı veritabanı | Postgres; ajan başına anahtar, günlük bütçe, model izni |
-| Ekstralar | Open WebUI, Qdrant, Whisper — `--with-extras` |
+| Ekstralar | Open WebUI, Qdrant, Whisper · `--with-extras` |
 
 ---
 
@@ -212,22 +212,22 @@ Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra ke
 
 | Port | Servis | Ne zaman açılır | Değiştir |
 |---|---|---|---|
-| `4000` | **LiteLLM kapı** — tek API adresi | her zaman | `GATEWAY_BIND` |
+| `4000` | **LiteLLM kapı**, tek API adresi | her zaman | `GATEWAY_BIND` |
 | yok | **Kapı veritabanı** (Postgres) · anahtar, bütçe, harcama · yalnız konteyner ağında | her zaman | bağlanmaz |
-| `8002` | `haiku` (vLLM) | `demo`, `daily` | — |
-| `8000` | `sonnet` (vLLM) | `demo`, `daily` | — |
-| `8888` | `opus` (vLLM) | `daily` | — |
-| `8001` | `fable` (vLLM) | `fable` | — |
+| `8002` | `haiku` (vLLM) | `demo`, `daily` | yok |
+| `8000` | `sonnet` (vLLM) | `demo`, `daily` | yok |
+| `8888` | `opus` (vLLM) | `daily` | yok |
+| `8001` | `fable` (vLLM) | `fable` | yok |
 | `8081` | llama-swap durum ucu | `--with-swap` | `SWAP_PORT` |
 | `8300` | **Agent Canvas** paneli (OpenHands'in bugünkü adı) | `--with-canvas` | `CANVAS_PORT`, `CANVAS_BIND` |
 | `8400` | A2A köprüsü | `--with-a2a` | `A2A_PORT`, `A2A_BIND` |
 | `8080` | NemoClaw OpenShell gateway | `--with-nemoclaw` | NemoClaw yönetir |
 | `18789` | NemoClaw paneli | `--with-nemoclaw` | NemoClaw atar |
 | `3000` | Open WebUI | `--with-extras` | `WEBUI_BIND` |
-| `6333` | Qdrant | `--with-extras` | — |
-| `9000` | Whisper | `stt` profili | — |
+| `6333` | Qdrant | `--with-extras` | yok |
+| `9000` | Whisper | `stt` profili | yok |
 
-İki tanesi bilerek kaydırıldı. Agent Canvas kendi içinde 8000 dinler ama o portu `sonnet` kullandığı için dışarı 8300'den açılır. llama-swap da 8080 yerine 8081'e alındı, çünkü 8080 NemoClaw'ın OpenShell gateway'inin varsayılanı — `--all` ile ikisi birden kurulduğunda çakışırlardı.
+İki tanesi bilerek kaydırıldı. Agent Canvas kendi içinde 8000 dinler ama o portu `sonnet` kullandığı için dışarı 8300'den açılır. llama-swap da 8080 yerine 8081'e alındı, çünkü 8080 NemoClaw'ın OpenShell gateway'inin varsayılanı ve `--all` ile ikisi birden kurulduğunda çakışırlardı.
 
 ---
 
@@ -238,18 +238,18 @@ elle yapılan bir iş değil.
 
 | Bileşen | Modele nasıl ulaşır | Kuralları alır mı | Vault'ta araştırabilir mi |
 |---|---|---|---|
-| Claude Code (makinede) | `.bashrc` → `:4000`, anahtar `KEY_INSAN` (fable dahil) | evet | evet — `~/vault` + vault MCP + `wiki` |
-| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000`, anahtar `KEY_CANVAS` (fable yok, bütçeli) | evet | evet — `/vault` salt okunur |
-| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000`, anahtar `KEY_CANVAS` | evet | evet — `/vault` salt okunur |
-| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1`, anahtar `KEY_A2A` | evet | kısmen — yol sistem isteminde, dosya aracı çağırana bağlı |
+| Claude Code (makinede) | `.bashrc` → `:4000`, anahtar `KEY_INSAN` (fable dahil) | evet | evet: `~/vault` + vault MCP + `wiki` |
+| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000`, anahtar `KEY_CANVAS` (fable yok, bütçeli) | evet | evet: `/vault` salt okunur |
+| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000`, anahtar `KEY_CANVAS` | evet | evet: `/vault` salt okunur |
+| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1`, anahtar `KEY_A2A` | evet | kısmen: yol sistem isteminde, dosya aracı çağırana bağlı |
 | Open WebUI | `OPENAI_API_BASE_URL` → `:4000/v1` | ilgisiz | hayır |
-| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1`, anahtar `KEY_NEMOCLAW` | **hayır** | **hayır** — aşağıya bak |
+| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1`, anahtar `KEY_NEMOCLAW` | **hayır** | **hayır**: aşağıya bak |
 | llama-swap | katmanlara servis adıyla (`haiku:8000`) | ilgisiz | hayır |
 | Kural kapısı | model kullanmaz | zorlar: ölçülebilir kurallar burada durur | hayır |
 
 ### Nereden çalışırsan çalış aynı sistem
 
-Amaç şu: makinedeki Claude Code'da mı yazıyorsun, Canvas panelinde mi — aynı roller, aynı
+Amaç şu: makinedeki Claude Code'da mı yazıyorsun, Canvas panelinde mi: aynı roller, aynı
 kurallar, aynı skill'ler, aynı bilgi tabanı. Bugün duran tablo:
 
 | | makinede Claude Code | Agent Canvas |
@@ -261,20 +261,20 @@ kurallar, aynı skill'ler, aynı bilgi tabanı. Bugün duran tablo:
 | claude-obsidian'ın 15 skill'i | eklenti olarak | **ortak skill dizininde** |
 | Host skill'leri (superpowers vb.) | `~/.claude/skills` | **ortak skill dizininde** |
 | Kural kapısı | `core.hooksPath` ile her depo | `GIT_CONFIG_*` ile aynı kancalar |
-| MCP sunucuları | yedisi de | **yok** — aşağıya bak |
+| MCP sunucuları | yedisi de | **yok**: aşağıya bak |
 
 Skill birliğini `roller/skill-birlestir.sh` kuruyor: kurallar, claude-obsidian skill'leri ve
 `~/.claude/skills` altındaki her şey tek dizinde birleşiyor, compose onu kaba
 `~/.agents/skills` olarak bağlıyor. Biçim iki tarafta da aynı (`SKILL.md` + frontmatter), o
 yüzden dönüştürme gerekmiyor. claude-obsidian skill'lerindeki `PRODUCT_ROOT` yer tutucusu
 kaptaki `/opt/claude-obsidian` yoluna sabitleniyor, böylece `wiki-query` ve `wiki-retrieve`
-Canvas'ta da çalışıyor — yani vault araması artık iki tarafta da aynı hattan geçiyor.
+Canvas'ta da çalışıyor, yani vault araması artık iki tarafta da aynı hattan geçiyor.
 
 Dizin her kurulumda sıfırdan derleniyor; makinede sildiğin bir skill kapta kalmıyor.
 
 **MCP'de eşitlik sağlanamıyor ve sebebi yapısal.** Canvas MCP'yi destekliyor (`stdio` ve
 `url` biçimleri var), ama bizim yedi sunucumuz `docker run` ile çalışan stdio sunucuları ve
-kabın içinde docker yok — olmasını da istemiyoruz, yalıtımı zayıflatırdı. Kaptaki ajanın
+kabın içinde docker yok, olmasını da istemiyoruz, yalıtımı zayıflatırdı. Kaptaki ajanın
 dosya, kabuk ve arama araçları zaten yerleşik, yani `filesystem` ve `git` MCP'leri orada
 gereksiz. Gerçekten eksik kalan `fetch`, `context7` ve `playwright` gibi dışarıya çıkanlar;
 onlara ihtiyaç duyan işi makinedeki Claude Code'a bırakmak doğru olur. Bunları kapta da
@@ -283,13 +283,13 @@ istersen yol belli: her birini HTTP/SSE konuşan bir compose servisi olarak çal
 
 **Ajanlar vault'ta nasıl araştırıyor.** Erişim tek başına yetmiyordu: kaplara vault bağlıydı
 ama hiçbir şey ajana oraya bakmasını söylemiyordu. Artık kural metni, rol gövdeleri ve
-`AGENTS.md` vault'un yapısını anlatıyor — `wiki/index.md` konu haritası, `wiki/log.md` kararlar,
-`inbox/` işlenmemiş kaynaklar — ve geçmiş bir karara dayanan her cevapta önce oraya bakmasını,
+`AGENTS.md` vault'un yapısını anlatıyor: `wiki/index.md` konu haritası, `wiki/log.md` kararlar,
+`inbox/` işlenmemiş kaynaklar. Ayrıca geçmiş bir karara dayanan her cevapta önce oraya bakmasını,
 dayandığı sayfayı söylemesini, kayıt yoksa "vault'ta kayıt yok" demesini şart koşuyor.
 
 Host tarafında bunun üstüne claude-obsidian'ın kendi getirme hattı var (BM25 dizini, `wiki-query`,
 `wiki-retrieve`); `wiki "auth kararı neydi?"` onu kullanır. Kaplardaki ajanlar o hatta sahip
-değil, düz dosya araması yapar — aynı içeriğe ulaşır, sıralama daha kaba olur.
+değil, düz dosya araması yapar; aynı içeriğe ulaşır, sıralama daha kaba olur.
 
 **NemoClaw kuralları almıyor ve bu bilinçli.** O kap dışarıdan gelen isteği karşılayan, en az
 güvenilen giriş noktası; bilgi tabanını oraya bağlamak istenmedi. Gerekirse
@@ -388,7 +388,7 @@ GB10'da `nvidia-smi --query-gpu=memory.*` çoğu sürümde `Not Supported` döne
 
 ---
 
-## Katman değişimi — llama-swap
+## Katman değişimi: llama-swap
 
 `--with-swap` (ya da `--all`) ile [llama-swap](https://github.com/mostlygeek/llama-swap) kapı ile model sunucuları arasına girer. `spark up fable` yazmaya gerek kalmaz: Claude Code içinde `/model fable` dersin, llama-swap çakışan katmanları kapatır, fable'ı açar, boşta kalanı süresi dolunca düşürür.
 
@@ -406,7 +406,7 @@ Kurulum bittiğinde ana katman bir kez ısıtılır, böylece ilk gerçek isteğ
 | Ayar | Varsayılan | Ne yapar |
 |---|---|---|
 | `SWAP_TTL` | `1800` | Bir katman kaç saniye boşta kalınca düşer |
-| `SWAP_TTL_<KATMAN>` | — | Katman başına ayrı süre (`SWAP_TTL_FABLE=900`) |
+| `SWAP_TTL_<KATMAN>` | yok | Katman başına ayrı süre (`SWAP_TTL_FABLE=900`) |
 | `SWAP_HEALTH_TIMEOUT` | `2100` | İlk açılışta çekirdek derlemesi için tanınan süre |
 | `SWAP_BIND` | `127.0.0.1` | llama-swap'in dinlediği adres |
 
@@ -414,11 +414,11 @@ Kurulum bittiğinde ana katman bir kez ısıtılır, böylece ilk gerçek isteğ
 
 İlk açılış hâlâ 3-4 dakika sürüyor; llama-swap bunu ortadan kaldırmıyor, yalnızca ne zaman olacağına kendisi karar veriyor. Soğuk bir katmana ilk kez geçerken Claude Code kendi zaman aşımına takılabilir; o katmanı önce `spark ask "merhaba" fable` ile ısıtmak bu sorunu bitirir.
 
-llama-swap'in Docker API istemcisi yok — komutu düz `exec` ediyor. Bu yüzden konteynere hem `docker.sock` hem de statik `docker` CLI ikilisi bağlanıyor ve konteyner host'un `docker` grubuna alınıyor. Soketi görebilen bir konteyner pratikte makinede root demektir; makineyi ekibe açıyorsan bunu bilerek yap.
+llama-swap'in Docker API istemcisi yok; komutu düz `exec` ediyor. Bu yüzden konteynere hem `docker.sock` hem de statik `docker` CLI ikilisi bağlanıyor ve konteyner host'un `docker` grubuna alınıyor. Soketi görebilen bir konteyner pratikte makinede root demektir; makineyi ekibe açıyorsan bunu bilerek yap.
 
 llama-swap'te kimlik doğrulama yok. Bu yüzden `SWAP_BIND` varsayılan olarak `127.0.0.1`; kapı (LiteLLM) ona ağ içinden `llamaswap:8080` ile ulaştığı için dışarı açmaya gerek de yok. Ekibe açarken açman gereken tek şey kapının kendisi.
 
-**Grup kuralı hakkında bir uyarı.** Aynı yığını kuran bir topluluk deposu grup kuralını kapatmış; gerekçesi, beklenmedik model değişimlerinin ölçüm koşularını bozmasıydı. Bizde grup kuralı asıl işi yapan şey (üç katmanın birlikte durabilmesi onunla mümkün), o yüzden açık bırakıldı. Uzun bir karşılaştırma koşusu yapacaksan `/srv/ai/compose/llamaswap.yaml` içindeki `routing:` bloğunu kaldır — llama-swap o zaman tek model kuralına döner, katmanlar birbirini beklemez ama aynı anda yalnız biri ayakta kalır.
+**Grup kuralı hakkında bir uyarı.** Aynı yığını kuran bir topluluk deposu grup kuralını kapatmış; gerekçesi, beklenmedik model değişimlerinin ölçüm koşularını bozmasıydı. Bizde grup kuralı asıl işi yapan şey (üç katmanın birlikte durabilmesi onunla mümkün), o yüzden açık bırakıldı. Uzun bir karşılaştırma koşusu yapacaksan `/srv/ai/compose/llamaswap.yaml` içindeki `routing:` bloğunu kaldır; llama-swap o zaman tek model kuralına döner, katmanlar birbirini beklemez ama aynı anda yalnız biri ayakta kalır.
 
 ---
 
@@ -433,7 +433,7 @@ LITELLM_KEY=<uzun-bir-anahtar>
 
 `spark up daily` ile yeniden başlatılır. İstemci tarafında: OpenAI uyumlu uç `http://<spark-ip>:4000/v1`, model adı `opus`. Claude Code için `ANTHROPIC_BASE_URL=http://<spark-ip>:4000`.
 
-Ofis dışı erişim için Tailscale önerilir — port açmayı ve sabit IP'yi gerektirmez.
+Ofis dışı erişim için Tailscale önerilir, çünkü port açmayı ve sabit IP'yi gerektirmez.
 
 ---
 
@@ -446,7 +446,7 @@ bir sözleşmedir ve o sözleşme bilgi tabanında durur.
 
 Kurallar `~/vault/kurallar/` altında dört dosyadadır: `kod-standartlari.md`, `test-kurallari.md`,
 `pr-kurallari.md`, `yazim-kurallari.md`. Kurulum bunları taslak olarak koyar, varsa üzerine
-yazmaz. **Hiçbir ajan tanımı bu metni kopyalamaz, yerini gösterir** — kopya eskir, tek kaynak
+yazmaz. **Hiçbir ajan tanımı bu metni kopyalamaz, yerini gösterir**: kopya eskir, tek kaynak
 eskimez. Bir kuralı vault'ta değiştirdiğinde bütün ajanlar o an yeni kurala bağlanır.
 
 Üç rol kurulur ve kimse kendi işini onaylamaz:
@@ -477,7 +477,7 @@ canlı okuyup gösterir, yani "açık sanıyordum" durumu olmaz.
 
 ### Role nasıl görev verilir
 
-Rolü elle "atamazsın" — yönlendiren ajan işi bölüp devreder. Üç yol var:
+Rolü elle "atamazsın"; yönlendiren ajan işi bölüp devreder. Üç yol var:
 
 ```
 Bırak o karar versin   "ödeme akışına indirim kuponu ekle, testleriyle"
@@ -509,7 +509,7 @@ spark agents --onerilen         # seçilmiş 15'i (yeniden) kur
 
 Her eklemeden sonra uyarlayıcı kendiliğinden çalışır ve üç şeyi ekler: adı slug'a çevirir,
 katman adını yazar (host'ta `opus`, Canvas'ta `litellm_proxy/opus`), gövdeye şirket kurallarını
-bağlar — yoksa çekilen persona bizim kurallarımızı okumaz. Ayrıca Canvas kopyasını üretir.
+bağlar, yoksa çekilen persona bizim kurallarımızı okumaz. Ayrıca Canvas kopyasını üretir.
 Uyarlanmış dosyaya ikinci kez dokunulmaz, tekrar tekrar çalıştırılabilir.
 
 Katman seçimi ajanın işine göre: mimari ve kod yazanlar `opus`, işletme ve olay müdahale
@@ -519,7 +519,7 @@ Kendi rollerimizle çakışanlar (kod yazan, test eden, denetleyen) bilerek dı�
 kurallarımıza göre yazıldı, genel bir persona onların yerini almamalı.
 
 **Masaüstü uygulaması (`agency-agents-app`) kurulmuyor, iki sebeple.** Linux ikilileri yalnız
-amd64 — `aarch64` varlıkları macOS, `arm64-setup.exe` Windows; Spark aarch64 Linux olduğu için
+amd64; `aarch64` varlıkları macOS, `arm64-setup.exe` Windows; Spark aarch64 Linux olduğu için
 eşleşen ikili yok. Ve zaten gerek de yok: o uygulamanın `tools.json` dosyasında Claude Code
 biçimi `identity` olarak tanımlı, yani dosyayı hiç dönüştürmeden kopyalıyor. Sardığımız
 `scripts/install.sh` ile aynı işi, üstelik başsız ve bizim kurallarımıza bağlayarak yapıyoruz.
@@ -555,9 +555,9 @@ Ayrıntı: [docs/MIMARI.md](docs/MIMARI.md)
 
 ---
 
-## Agent Canvas — ajan kontrol merkezi
+## Agent Canvas: ajan kontrol merkezi
 
-`--with-canvas` (ya da `--all`) ile [Agent Canvas](https://github.com/OpenHands/OpenHands) kurulur: konuşmalar, dosyalar, terminal, model ayarları ve otomasyonlar tek panelden yönetilir. Otomasyonlar webhook ve zamanlayıcıyla tetiklenir — PR incelemesi, depo gözcüsü gibi işleri buraya kurarsın.
+`--with-canvas` (ya da `--all`) ile [Agent Canvas](https://github.com/OpenHands/OpenHands) kurulur: konuşmalar, dosyalar, terminal, model ayarları ve otomasyonlar tek panelden yönetilir. Otomasyonlar webhook ve zamanlayıcıyla tetiklenir; PR incelemesi, depo gözcüsü gibi işleri buraya kurarsın.
 
 ```bash
 spark up canvas    # aç
@@ -574,7 +574,7 @@ Panel `http://localhost:8300/canvas` adresinde (kendi portu 8000 ama onu `sonnet
 Agent Canvas  →  Claude Code (ACP)  →  LiteLLM :4000  →  yerel katman
 ```
 
-İki not. Model ayarı **env değişkeniyle yapılamıyor** — ilk açılışta Settings → LLM'e bir kez elle girilir (`spark canvas` tam olarak ne yazacağını gösterir): Model `litellm_proxy/opus`, Base URL `http://litellm:4000`, API Key `.env` içindeki `LITELLM_KEY`. İkincisi, Claude aboneliğinin OAuth token'ı bu kuruluma **verilmez**: üst akış belgeleri, `ANTHROPIC_BASE_URL` ile birlikte kullanıldığında token'ın kimlik doğrulamasının bozulduğunu söylüyor. Ya abonelik ya yerel kapı; burada tercih yerel kapı.
+İki not. Model ayarı **env değişkeniyle yapılamıyor**; ilk açılışta Settings → LLM'e bir kez elle girilir (`spark canvas` tam olarak ne yazacağını gösterir): Model `litellm_proxy/opus`, Base URL `http://litellm:4000`, API Key `.env` içindeki `LITELLM_KEY`. İkincisi, Claude aboneliğinin OAuth token'ı bu kuruluma **verilmez**: üst akış belgeleri, `ANTHROPIC_BASE_URL` ile birlikte kullanıldığında token'ın kimlik doğrulamasının bozulduğunu söylüyor. Ya abonelik ya yerel kapı; burada tercih yerel kapı.
 
 Ayrıntılı tasarım ve ajan rolleri: **[docs/MIMARI.md](docs/MIMARI.md)**
 
@@ -602,7 +602,7 @@ nemoclaw spark policy list      # ağ politikası kuralları
 
 ## Obsidian + bilgi tabanı
 
-`--with-wiki` ile [AgriciDaniel/claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian) (MIT) kurulur: Claude Code eklentisi ve 15 Agent Skill. Obsidian uygulaması ARM64 AppImage olarak yüklenir — Spark aarch64 olduğu için resmî `.deb` kullanılamaz.
+`--with-wiki` ile [AgriciDaniel/claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian) (MIT) kurulur: Claude Code eklentisi ve 15 Agent Skill. Obsidian uygulaması ARM64 AppImage olarak yüklenir; Spark aarch64 olduğu için resmî `.deb` kullanılamaz.
 
 ```bash
 wiki                        # vault'ta Claude Code aç
@@ -650,7 +650,7 @@ böyledir: ajanın kendi ürettiği metni yarın kaynak diye geri okumasını is
 Ekledikten sonra elle bir şey yapman gerekmez. Arama indeksi bayatladığını fark eder, eksik bir
 indeksi servis etmek yerine yeniden kurma komutunu verir.
 
-Retrieval BM25 ile yerel ve deterministiktir — embedding modeli gerekmez, ek bellek kullanmaz. Mevcut bir vault varsa `adopt` akışıyla içeriğe dokunmadan devralınır.
+Retrieval BM25 ile yerel ve deterministiktir: embedding modeli gerekmez, ek bellek kullanmaz. Mevcut bir vault varsa `adopt` akışıyla içeriğe dokunmadan devralınır.
 
 Sınırlar: `autoresearch` skill'i internet erişimi ister; PDF/EPUB için metadata ve hash tutulur, semantik çıkarım yapılmaz; Obsidian uygulaması masaüstü oturumu gerektirir (headless kurulumda vault ve `wiki` komutu yine çalışır).
 
@@ -660,12 +660,12 @@ Sınırlar: `autoresearch` skill'i internet erişimi ister; PDF/EPUB için metad
 
 Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 
-1. **PR inceleme botu** — self-host, yerel kapıya bağlı; her PR'a otomatik inceleme yorumu
-2. **Otonom kod ajanı** — issue'dan PR'a çalışan, sandbox'lı ajan
-3. **Doküman arama (RAG)** — Qdrant + embedding modeli; ana katmanla birlikte çalışabilir
-4. **Toplantı notları** — Whisper ile ses → yazı, ardından özet
-5. **Gözlemlenebilirlik** — istek süreleri, kullanım, maliyet panosu
-6. **Otomatik başlatma** — systemd birimiyle açılışta `spark up daily`
+1. **PR inceleme botu**: self-host, yerel kapıya bağlı; her PR'a otomatik inceleme yorumu
+2. **Otonom kod ajanı**: issue'dan PR'a çalışan, sandbox'lı ajan
+3. **Doküman arama (RAG)**: Qdrant + embedding modeli; ana katmanla birlikte çalışabilir
+4. **Toplantı notları**: Whisper ile ses → yazı, ardından özet
+5. **Gözlemlenebilirlik**: istek süreleri, kullanım, maliyet panosu
+6. **Otomatik başlatma**: systemd birimiyle açılışta `spark up daily`
 
 ---
 
@@ -687,7 +687,7 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 | LiteLLM | `ghcr.io/berriai/litellm` |
 | llama-swap | `ghcr.io/mostlygeek/llama-swap` (`unified-cuda13`, arm64) |
 | Agent Canvas | `ghcr.io/openhands/agent-canvas` (`1.19.0`, arm64) |
-| Uzman roller | `msitarzewski/agency-agents` (MIT) — katalog + resmî kurucusu |
+| Uzman roller | `msitarzewski/agency-agents` (MIT): katalog + resmî kurucusu |
 | MCP sunucuları | `mcp/*` Docker kataloğu |
 | Skill kütüphanesi | `obra/superpowers` |
 | Bilgi tabanı | `AgriciDaniel/claude-obsidian` |

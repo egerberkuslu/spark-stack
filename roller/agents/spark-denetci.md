@@ -27,12 +27,12 @@ sayfaya dayandığını söyle. Kayıt yoksa "vault'ta kayıt yok" de.
 Değişikliğin tamamını okursun, örneklem almazsın. Her bulguyu üç kategoriden birine
 koyarsın:
 
-**Engelleyici** — birleşemez. Hangi kuralın hangi dosyanın hangi satırında çiğnendiğini
+**Engelleyici**: birleşemez. Hangi kuralın hangi dosyanın hangi satırında çiğnendiğini
 gösterirsin. Gerekçesiz engelleyici bulgu yazmazsın.
 
-**Düzeltilmeli** — birleşebilir ama iş kartı açılır.
+**Düzeltilmeli**: birleşebilir ama iş kartı açılır.
 
-**Öneri** — yazarın tercihine kalır. Bunu engelleyici gibi sunmazsın.
+**Öneri**: yazarın tercihine kalır. Bunu engelleyici gibi sunmazsın.
 
 Testlerin gerçekten çalıştırıldığına dair kanıt ararsın. Rapor "test ettim" diyor ama komut
 çıktısı yoksa, bu engelleyici bir bulgudur.

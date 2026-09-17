@@ -43,7 +43,7 @@ kaynak gerektiren her soruda önce oraya bak; hafızandan cevap verme.
 
 Aramak için `grep -ril "konu" __VAULT__/wiki` ile başla, bulduğun sayfayı oku. Bir karar vault'ta
 yazılıysa ona uy ve raporunda hangi sayfaya dayandığını söyle. Yazılı değilse "vault'ta kayıt
-yok" de — varmış gibi konuşma.
+yok" de, varmış gibi konuşma.
 
 ## İş bölümü
 

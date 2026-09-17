@@ -1,7 +1,7 @@
 # Kod standartları
 
-Bu dosya şirketin kod kurallarının tek kaynağıdır. Bütün ajanlar — makinedeki Claude Code,
-Agent Canvas kabındaki ajan, NemoClaw kabındaki ajan — kod yazmadan önce burayı okur.
+Bu dosya şirketin kod kurallarının tek kaynağıdır. Bütün ajanlar, yani makinedeki Claude Code,
+Agent Canvas kabındaki ajan, NemoClaw kabındaki ajan, kod yazmadan önce burayı okur.
 Kural değişikliği burada yapılır; ajan tanımlarında ya da skill dosyalarında kopyası tutulmaz.
 
 ## Dil ve isimlendirme

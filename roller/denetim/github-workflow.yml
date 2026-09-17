@@ -1,4 +1,4 @@
-# Kural kapısı — PR açıldığında aynı denetim GitHub'da da koşar.
+# Kural kapısı: PR açıldığında aynı denetim GitHub'da da koşar.
 # Kural kopyası .kural/ altında durur; 'spark kural kur <proje>' tazeler.
 name: kural kapısı
 on:

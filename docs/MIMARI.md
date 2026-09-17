@@ -55,7 +55,7 @@ harcadı" yazar. Bir ajan çığırından çıktığında hangisi olduğunu gör
 meşgul etmek yerine bütçesi bitince durur.
 
 **Model izni.** Bu en önemlisi ve doğrudan donanımla ilgili: **otomasyon anahtarlarına
-fable verilmez.** Nedeni şu — llama-swap'in grup kuralında fable dışlayıcıdır, açıldığında
+fable verilmez.** Nedeni şu: llama-swap'in grup kuralında fable dışlayıcıdır, açıldığında
 haiku, sonnet ve opus düşer. Tek geliştirici için bu sadece bir bekleme; eş zamanlı çalışan
 beş ajan için, birinin fable istemesi diğer dördünün modelini altından çeker. Bu yüzden
 fable insan tarafından bilerek seçilen bir katman olarak kalmalı, bir otomasyonun
@@ -79,7 +79,7 @@ CI'da mekanik olarak zorlanır; hangi kuralın nerede denetlendiği `kurallar/*.
 Üç çalışma zamanının üç ayrı hasar yarıçapı var ve bu bilinçli bir seçimdir.
 
 Claude Code host'ta çalışır, geliştiricinin dosyalarına doğrudan erişir. Bu bir kusur değil,
-eşli programlamanın gereği — ama yanında insan olduğu için kabul edilebilir.
+eşli programlamanın gereği, ama yanında insan olduğu için kabul edilebilir.
 
 Agent Canvas insansız işler içindir ve burada iki ayrı yalıtım seviyesi var, karıştırmamak
 gerekiyor. Konteyner olarak kurduğumuzda ajan zaten Canvas kabının içinde koşar; makinenin
@@ -107,7 +107,7 @@ hâlâ birbirinden habersiz çalışabilir. İşbirliğini kuran üç şey var v
 
 **Ortak sözleşme: kurallar vault'ta.** Kod standartları, test kuralları, PR kuralları ve
 yazım kuralları `vault/kurallar/` altında dört dosyada durur. Hiçbir ajan tanımı, hiçbir
-skill bu metni kopyalamaz — yalnızca yerini gösterir. Sebebi şu: kopyalanan kural eskir,
+skill bu metni kopyalamaz, yalnızca yerini gösterir. Sebebi şu: kopyalanan kural eskir,
 ajan tanımları birbirinden ayrışır ve bir süre sonra iki ajan farklı kurala uyar. Tek kaynak
 eskimez. Bir kuralı vault'ta değiştirdiğinde host'taki Claude Code da, Canvas kabındaki ajan
 da o an yeni kurala bağlanmış olur; yeniden kurulum gerekmez.
@@ -116,11 +116,11 @@ da o an yeni kurala bağlanmış olur; yeniden kurulum gerekmez.
 yapar. `spark-kod` yazar ama test yazmaz. `spark-test` testi yazar ve **çalıştırır**, çıktısını
 rapora koyar; kırılan testi kendisi düzeltmez, geri devreder. `spark-denetci` değişikliğin
 tamamını okur, bulgularını engelleyici / düzeltilmeli / öneri diye ayırır, PR açıklamasını
-hazırlar ve orada durur — birleştirme kararı insanındır. Bu ayrım bir üslup tercihi değil:
+hazırlar ve orada durur; birleştirme kararı insanındır. Bu ayrım bir üslup tercihi değil:
 kodu yazan, kendi varsayımını doğrulamaya eğilimlidir.
 
 **Roller iki çalışma zamanında da tanınır.** Mekanizma tesadüf değil: Claude Code'un alt ajan
-dosyaları ile OpenHands SDK'sının `AgentDefinition` dosyaları aynı biçimi kullanıyor —
+dosyaları ile OpenHands SDK'sının `AgentDefinition` dosyaları aynı biçimi kullanıyor:
 YAML frontmatter artı gövde, gövde sistem istemi oluyor. Kurulum tek kaynaktan iki sürüm
 üretir ve yalnızca iki alanı değiştirir: kural yolu (`~/vault/kurallar` ya da `/vault/kurallar`)
 ve model adı (`opus` ya da `litellm_proxy/opus`). Host sürümü `~/.claude/agents/` altına,
@@ -156,7 +156,7 @@ kartta beceri olarak listelenir, ayrıca her rolün kendi kartı ve kendi uç no
 
 Üç tasarım kararı önemli. Birincisi, köprü rol tanımlarını **aynı tek kaynaktan** okur; ayrı
 bir kopya tutmaz, dolayısıyla rol değişince protokolden görünen de değişir. İkincisi, her
-isteği karşılarken kuralları sistem isteminin içine ekler — uzaktan gelen bir görev de şirket
+isteği karşılarken kuralları sistem isteminin içine ekler; uzaktan gelen bir görev de şirket
 kurallarına bağlı kalır, çünkü kuralı okumak çağıranın insafına bırakılmamıştır. Üçüncüsü,
 yalnız standart kütüphane kullanır: `python:3.12-alpine` imajı doğrudan koşar, kurulum adımı,
 bağımlılık ve derleme yoktur.
@@ -167,11 +167,11 @@ birini reddetmek uyumluluk kazandırmaz.
 
 Sınırı da yazalım: köprü akış (streaming) ve itme bildirimi (push notification) sunmuyor,
 kartında ikisini de `false` olarak bildiriyor. Görevler bellekte tutuluyor, yani köprü yeniden
-başlarsa geçmiş görev kayıtları gider — çalışan bir iş değil, yalnızca sorgulanabilir kayıt
+başlarsa geçmiş görev kayıtları gider; çalışan bir iş değil, yalnızca sorgulanabilir kayıt
 kaybolur.
 
 **Kural yükleme üç koldan sağlama alındı.** Birincisi rol dosyalarının gövdesi, ikincisi
-proje kökündeki `AGENTS.md` — SDK bunu `agents` adlı bir skill'e çevirip tetikleyicisiz
+proje kökündeki `AGENTS.md`; SDK bunu `agents` adlı bir skill'e çevirip tetikleyicisiz
 yüklüyor, yani tam metin her konuşmanın sistem istemine giriyor. Üçüncüsü `kurallar/`
 klasörünün Canvas kabına kullanıcı skill'i olarak bağlanması (`~/.agents/skills`, salt
 okunur): tetikleyicisi olmayan `.md` dosyaları da tam metin yükleniyor. Üçü birden olduğu
@@ -205,7 +205,7 @@ bakabilir, arayabilir, alıntılayabilir; yazma işi insanın onayladığı `wik
 
 **Kaplarda neden MCP yok.** Kurduğumuz yedi MCP sunucusunun hepsi `docker run` ile çalışıyor.
 Canvas kabının içinde docker yok, olması da istenmez. Ama orada ajanın zaten yerleşik dosya ve
-kabuk araçları var ve bunlar kabın sınırında duruyor — yani MCP'nin sağladığı erişimi, daha dar
+kabuk araçları var ve bunlar kabın sınırında duruyor, yani MCP'nin sağladığı erişimi, daha dar
 bir yetkiyle, kabın kendisi veriyor. Eksik olan tek şey `context7` ve `playwright` gibi dış
 servisler; onlara ihtiyaç duyan işi host'taki Claude Code'a bırakmak doğru olur.
 
@@ -286,11 +286,11 @@ ayrı bir kapı açmaktan iyidir.
 |---|---|
 | Dört katman + kapı + llama-swap | Kurulu |
 | Claude Code (host) | Kurulu |
-| NemoClaw kabı | Kurulu — `--with-nemoclaw` |
-| Obsidian bilgi tabanı | Kurulu — `--with-wiki` |
-| Agent Canvas + otomasyonlar | Kurulu — `--with-canvas` |
-| Kapı veritabanı + ajan başına anahtar, bütçe, model izni | Kurulu — her kurulumda |
-| Kural kapısı: git kancaları, PR kapısı, CI şablonu | Kurulu — her kurulumda |
+| NemoClaw kabı | Kurulu: `--with-nemoclaw` |
+| Obsidian bilgi tabanı | Kurulu: `--with-wiki` |
+| Agent Canvas + otomasyonlar | Kurulu: `--with-canvas` |
+| Kapı veritabanı + ajan başına anahtar, bütçe, model izni | Kurulu: her kurulumda |
+| Kural kapısı: git kancaları, PR kapısı, CI şablonu | Kurulu: her kurulumda |
 | İkinci makine (`SPARK_PEERS`) | Kapı tarafı hazır, gerçek eş makineyle denenmedi |
 | Medya havuzu | Mimaride yer ayrıldı, bugün yok |
 

@@ -4,7 +4,7 @@ Doküman, README, kod yorumu, PR açıklaması ve ajan raporu bu kurallara uyar.
 
 ## Ton
 
-Akan cümlelerle yaz. Madde imi, ancak gerçekten liste olan şey için kullanılır — üç
+Akan cümlelerle yaz. Madde imi, ancak gerçekten liste olan şey için kullanılır; üç
 paragrafı üç maddeye bölmek liste yapmaz, paragrafı sakatlar.
 
 Tek cümlelik bilgi tek cümleyle verilir. "Şunu belirtmek gerekir ki" diye başlayan cümle

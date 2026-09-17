@@ -15,7 +15,7 @@ Tasarım kararları:
   - Kurallar salt okunur bağlanır ve her isteğe sistem isteminin içine eklenir.
     Böylece uzaktan gelen bir görev de şirket kurallarına bağlı kalır.
 
-Protokol: https://github.com/a2aproject/A2A — keşif /.well-known/agent-card.json,
+Protokol: https://github.com/a2aproject/A2A; keşif /.well-known/agent-card.json,
 gövde JSON-RPC 2.0, metotlar SendMessage / GetTask / ListTasks / CancelTask.
 """
 
@@ -44,7 +44,7 @@ BASE_URL = os.environ.get("A2A_BASE_URL", f"http://localhost:{PORT}").rstrip("/"
 MAX_TOKENS = int(os.environ.get("A2A_MAX_TOKENS", "4096"))
 REQUEST_TIMEOUT = int(os.environ.get("A2A_TIMEOUT", "900"))
 
-# JSON-RPC hata kodları — spec 9.x
+# JSON-RPC hata kodları: spec 9.x
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601

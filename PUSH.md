@@ -14,7 +14,7 @@ git push -u origin main
 ```
 
 Depo GitHub'da henüz oluşturulmadıysa önce oluştur (README/lisans ekleme seçeneklerini
-işaretleme — bu depoda zaten var), sonra yukarıdaki komutları çalıştır.
+işaretleme; bu depoda zaten var), sonra yukarıdaki komutları çalıştır.
 
 `gh` CLI kuruluysa tek adımda:
 

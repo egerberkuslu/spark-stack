@@ -21,15 +21,15 @@ Süreler indirmeyi ve ilk açılıştaki GPU çekirdeği derlemesini kapsar.
 | Katman | HuggingFace deposu | Aile | Aktif param. | Kullanım | Bellek | Port |
 |---|---|---|---|---|---|---|
 | `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~25 GB | 8002 |
-| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri — **~108 tok/s** | ~20 GB | 8000 |
-| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri — **varsayılan** | ~20 GB | 8888 |
-| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler — **tek başına çalışır** | ~67 GB | 8001 |
+| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~20 GB | 8000 |
+| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~20 GB | 8888 |
+| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~67 GB | 8001 |
 
 Depolar `/srv/ai/compose/.env` içinde `HAIKU_REPO`, `SONNET_REPO`, `OPUS_REPO`, `FABLE_REPO` olarak tanımlıdır; başka bir model denemek için tek yerden değiştirilir.
 
-Claude Code içinde `/model haiku`, `/model sonnet`, `/model opus` ile geçiş yapılır. `fable` için önce terminalde `spark up fable` — diğer katmanlar otomatik kapanır.
+Claude Code içinde `/model haiku`, `/model sonnet`, `/model opus` ile geçiş yapılır. `fable` için önce terminalde `spark up fable` çalıştırılır; diğer katmanlar otomatik kapanır.
 
-`--with-swap` (veya `--all`) ile kurduysan bu elle adım ortadan kalkar: `/model fable` demen yeter, llama-swap katmanı kendisi açar. Ayrıntı: [Katman değişimi](#katman-değişimi--llama-swap).
+`--with-swap` (veya `--all`) ile kurduysan bu elle adım ortadan kalkar: `/model fable` demen yeter, llama-swap katmanı kendisi açar. Ayrıntı: [Katman değişimi](#katman-değişimi-llama-swap).
 
 ---
 
@@ -37,14 +37,14 @@ Claude Code içinde `/model haiku`, `/model sonnet`, `/model opus` ile geçiş y
 
 Model ağırlıkları HuggingFace'ten iniyor; ücretsiz bir erişim anahtarı gerekiyor.
 
-1. [huggingface.co](https://huggingface.co) — hesabın yoksa üye ol
+1. [huggingface.co](https://huggingface.co): hesabın yoksa üye ol
 2. Sağ üst profil → **Settings** → **Access Tokens**
 3. **+ Create new token** → Token type: **Read** → isim ver → **Create token**
 4. `hf_` ile başlayan değeri kopyala
 
 Script kurulum sırasında sorar; önceden vermek için `--token hf_xxx`.
 
-> Anahtarı yapıştırdığında ekranda görünmez — güvenlik gereği gizlenir. Enter'a bas.
+> Anahtarı yapıştırdığında ekranda görünmez, güvenlik gereği gizlenir. Enter'a bas.
 
 ---
 
@@ -80,9 +80,9 @@ Model adımında hangi katmanın hangi modeli indirdiği açıkça listelenir:
   │  sonnet  nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 ~20 GB  hızlı NVIDIA · ~108 tok/s
   │  opus    unsloth/Qwen3.8-27B-NVFP4                        ~20 GB  Qwen kalite · ciddi kod
   │
-  │ ✓ haiku indi — 24.9G
-  │ ✓ sonnet indi — 19.6G
-  │ ✓ sonnet taslak indi — spekülatif decode aktif
+  │ ✓ haiku indi: 24.9G
+  │ ✓ sonnet indi: 19.6G
+  │ ✓ sonnet taslak indi: spekülatif decode aktif
   │ opus ← unsloth/Qwen3.8-27B-NVFP4  (~20 GB)
 └─ [████████████████············]  58%  1840s · toplam 34:12 · kalan 8 adım
 ```
@@ -155,7 +155,7 @@ bash install.sh --with-agency --resume     # katalogdan 15 uzman rol
 
 ---
 
-## Katman değişimi — llama-swap
+## Katman değişimi: llama-swap
 
 `--with-swap` (veya `--all`) ile [llama-swap](https://github.com/mostlygeek/llama-swap) kapı ile model sunucuları arasına girer. Katman elle açılmaz: istek hangi katmana geliyorsa o açılır, çakışan kapanır, boşta kalan süresi dolunca düşer.
 
@@ -183,7 +183,7 @@ Düzeni geri almak için `--no-swap` ile yeniden kur; kapı yeniden katmanlara d
 ## Şirket kuralları ve roller
 
 Kurulum bilgi tabanına dört kural dosyası koyar ve makinene üç rol kurar. Kurallar taslaktır;
-kendi kurallarınla değiştirmen beklenir. **Varsa üzerine yazılmaz** — `--resume` ile tekrar
+kendi kurallarınla değiştirmen beklenir. **Varsa üzerine yazılmaz**; `--resume` ile tekrar
 çalıştırsan da düzenlediğin dosyalar korunur.
 
 ```
@@ -203,7 +203,7 @@ Roller iki yere birden kurulur, tek kaynaktan:
 Canvas her konuşma başlarken bu dizini kendiliğinden tarar; ayrıca bir kayıt adımı yok.
 
 Kurulum, Canvas ayağa kalkınca ayar API'sinden iki şeyi tohumlar ve geri okuyup doğrular:
-alt ajan devrini açar (`enable_sub_agents` — varsayılanı kapalı, kapalıyken devir aracı
+alt ajan devrini açar (`enable_sub_agents`, varsayılanı kapalı, kapalıyken devir aracı
 yüklenmiyor) ve modeli `litellm_proxy/opus` olarak yerel kapıya bağlar. Tohumlama başarısız
 olursa uyarır; o zaman panelden Settings → Agent → Sub-agents ve Settings → LLM elle yapılır.
 
@@ -249,7 +249,7 @@ curl -s -X POST http://127.0.0.1:4000/key/update -H "Authorization: Bearer $LITE
   -H 'Content-Type: application/json' -d "{\"key\":\"$KEY_CANVAS\",\"max_budget\":40}"
 ```
 
-## Agent Canvas — ajan kontrol merkezi
+## Agent Canvas: ajan kontrol merkezi
 
 `--with-canvas` (veya `--all`) ile kurulur. Konuşmalar, dosyalar, terminal ve otomasyonlar tek panelden yönetilir; ajan kabın içinde koşar ve yalnızca `/projects` altına bağladığın klasörü görür.
 
@@ -258,7 +258,7 @@ spark up canvas               # aç
 spark canvas                  # adres, panel anahtarı, girilecek ayarlar
 ```
 
-Panel: `http://localhost:8300/canvas` — kendi portu 8000 ama onu `sonnet` kullandığı için 8300'e taşındı.
+Panel: `http://localhost:8300/canvas`. Kendi portu 8000 ama onu `sonnet` kullandığı için 8300'e taşındı.
 
 İlk açılışta **Settings → LLM** bir kez elle doldurulur (bu ayar env değişkeniyle yapılamıyor):
 
@@ -268,7 +268,7 @@ Panel: `http://localhost:8300/canvas` — kendi portu 8000 ama onu `sonnet` kull
 | Base URL | `http://litellm:4000` |
 | API Key | `.env` içindeki `LITELLM_KEY` |
 
-Claude Code'u alt ajan olarak çalıştırmak için **Settings → Agent → Preset: Claude Code**. Kap zaten yerel kapıya bakacak şekilde kurulu (`ANTHROPIC_BASE_URL`). Claude aboneliğinin OAuth token'ını buraya girme — base URL ile birlikte çalışmıyor.
+Claude Code'u alt ajan olarak çalıştırmak için **Settings → Agent → Preset: Claude Code**. Kap zaten yerel kapıya bakacak şekilde kurulu (`ANTHROPIC_BASE_URL`). Claude aboneliğinin OAuth token'ını buraya girme, çünkü base URL ile birlikte çalışmıyor.
 
 Proje klasörünü değiştirmek için `--projects ~/kod`.
 
@@ -309,7 +309,7 @@ rollerimizle çakışanlar (kod/test/denetim) bilerek dışarıda; `spark-*` rol
 
 ---
 
-## A2A köprüsü — rolleri protokolle açmak
+## A2A köprüsü: rolleri protokolle açmak
 
 `--with-a2a` (veya `--all`) ile roller [Agent2Agent](https://github.com/a2aproject/A2A)
 protokolüyle dışarı açılır. Canvas'ın kendi devri tek süreç içinde kalır; bu köprü sayesinde
@@ -358,8 +358,8 @@ Kap adını değiştirmek için `--sandbox <ad>`. Kurulum host'a yalnızca `nemo
 
 `--with-wiki` (veya `--all`) ile kurulur:
 
-- **Obsidian** uygulaması — ARM64 AppImage, çünkü Spark aarch64 ve resmî `.deb` yalnızca amd64 için yayınlanıyor
-- **claude-obsidian** — Claude Code eklentisi + 15 Agent Skill
+- **Obsidian** uygulaması: ARM64 AppImage, çünkü Spark aarch64 ve resmî `.deb` yalnızca amd64 için yayınlanıyor
+- **claude-obsidian**: Claude Code eklentisi + 15 Agent Skill
 - Vault: `~/vault` (değiştirmek için `--vault ~/notlar`)
 
 ```bash
@@ -378,7 +378,7 @@ Mevcut bir Obsidian vault'un varsa script `adopt` akışını kullanır ve içer
 
 | Belirti | Çözüm |
 |---|---|
-| Servis 10 dakikadır açılmıyor | Beklenen davranış — ilk açılışta GPU çekirdekleri derleniyor. Sonraki açılışlar 3-5 dk. |
+| Servis 10 dakikadır açılmıyor | Beklenen davranış: ilk açılışta GPU çekirdekleri derleniyor. Sonraki açılışlar 3-5 dk. |
 | `docker: permission denied` | `newgrp docker`, ardından `bash install.sh --resume` |
 | `docker --gpus all çalışmıyor` | NVIDIA Container Toolkit eksik. Script kurmayı dener; başarısızsa `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker` |
 | Sürücü kuruldu, yeniden başlatma istendi | `sudo reboot`, sonra `cd spark-stack && bash install.sh --resume` |

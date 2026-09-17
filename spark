@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  spark — spark-stack yönetim komutu (her şey Docker)
+#  spark: spark-stack yönetim komutu (her şey Docker)
 #
 #    spark up [demo|daily|fable|swap|canvas|a2a|extras|stt]  servisleri aç (varsayılan: daily)
 #    spark down                          hepsini kapat
@@ -57,7 +57,7 @@ wait_ready() {  # wait_ready <katman> <saniye> [yol]
   while ! alive "$n" "$p"; do
     sleep 5; t=$((t+5))
     printf '\r  ⏳ %s açılıyor… %ss %s(ilk açılışta GPU çekirdekleri derlenir)%s' "$n" "$t" "$D" "$R"
-    (( t >= to )) && { printf '\n  ✖ %s açılmadı — spark logs %s\n' "$n" "$n"; return 1; }
+    (( t >= to )) && { printf '\n  ✖ %s açılmadı: spark logs %s\n' "$n" "$n"; return 1; }
   done
   printf '\r\033[K  %s✓%s %s hazır (%ss)\n' "$G" "$R" "$n" "$t"
 }
@@ -121,7 +121,7 @@ case "${1:-status}" in
     printf '\n  %sllama-swap%s  ·  katman istek anında açılır\n\n' "$B" "$R"
     OUT="$(curl -sf --max-time 10 "http://127.0.0.1:${SWAP_PORT:-8081}/running" 2>/dev/null || true)"
     if [[ -z "$OUT" ]]; then
-      echo "  (llama-swap cevap vermedi — spark logs llamaswap)"
+      echo "  (llama-swap cevap vermedi: spark logs llamaswap)"
     elif ! echo "$OUT" | jq -e . >/dev/null 2>&1; then
       echo "$OUT" | sed 's/^/  /'
     else
@@ -130,7 +130,7 @@ case "${1:-status}" in
       if [[ -n "$NAMES" ]]; then
         while IFS= read -r m; do printf '    %s✓%s %s\n' "$G" "$R" "$m"; done <<<"$NAMES"
       else
-        echo "  şu an ayakta katman yok — ilk istekte açılacak"
+        echo "  şu an ayakta katman yok: ilk istekte açılacak"
       fi
     fi
     printf '\n  Bellek      : %s\n\n' "$(memread)"
@@ -161,7 +161,7 @@ case "${1:-status}" in
     if [[ "$SUB" == "true" ]]; then
       printf '    alt ajan devri  %sAÇIK%s\n' "$G" "$R"
     else
-      printf '    alt ajan devri  %sKAPALI%s — roller görev alamaz\n' "$D" "$R"
+      printf '    alt ajan devri  %sKAPALI%s: roller görev alamaz\n' "$D" "$R"
       printf '                    aç: Settings → Agent → Sub-agents\n'
     fi
     printf '    model           %s\n' "$MDL"
@@ -185,7 +185,7 @@ case "${1:-status}" in
     printf '    kart   http://localhost:%s/.well-known/agent-card.json\n' "$AP"
     CARD="$(curl -sf --max-time 10 "http://127.0.0.1:$AP/.well-known/agent-card.json" 2>/dev/null)"
     if [[ -z "$CARD" ]]; then
-      echo "    (kart okunamadı — spark logs a2a)"
+      echo "    (kart okunamadı: spark logs a2a)"
     else
       printf '    sürüm  A2A %s\n\n' "$(echo "$CARD" | jq -r .protocolVersion)"
       echo "$CARD" | jq -r '.skills[] | "    \(.id)"' | while read -r l; do
@@ -267,7 +267,7 @@ case "${1:-status}" in
   logs)  $DC logs -f --tail 100 ${2:-} ;;
 
   pull)
-    # Model indirmeyi de konteynerle yapıyoruz — makineye python/pip kurmuyoruz
+    # Model indirmeyi de konteynerle yapıyoruz, makineye python/pip kurmuyoruz
     M="${2:?kullanım: spark pull haiku|sonnet|opus|fable}"
     case "$M" in
       haiku)  REPO="$HAIKU_REPO"  ;;
@@ -307,7 +307,7 @@ case "${1:-status}" in
 
   kural)
     GATE="$AI_ROOT/denetim/kural_kapisi.py"
-    [[ -f "$GATE" ]] || { echo "kural kapısı kurulu değil — bash install.sh --resume"; exit 1; }
+    [[ -f "$GATE" ]] || { echo "kural kapısı kurulu değil: bash install.sh --resume"; exit 1; }
     export SPARK_DENETIM_BIN="$AI_ROOT/denetim/bin" SPARK_KURALLAR="${OBSIDIAN_VAULT:-$HOME/vault}/kurallar"
     ALT="${2:-pr}"; shift; [[ $# -gt 0 ]] && shift
     case "$ALT" in

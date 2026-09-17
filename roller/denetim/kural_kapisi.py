@@ -326,7 +326,7 @@ def check_added_lines(ctx: Context, added: dict[str, list[tuple[int, str]]]) -> 
             if (
                 (is_doc or is_comment)
                 and "\u2014" in text
-                and not str(path).startswith("kurallar/")
+                and "kurallar" not in path.parts
             ):
                 ctx.add(
                     "writing",

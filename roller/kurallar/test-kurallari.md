@@ -6,7 +6,7 @@ varsayımını test etmeye eğilimlidir. Test eden ajan kodu değil **davranış
 ## Ne test edilir
 
 Her yeni fonksiyon için en az bir test. Düzeltilen her hata için, o hatayı yeniden üreten
-bir test — önce kırmızı olduğunu gör, sonra düzelt.
+bir test yazılır: önce kırmızı olduğunu gör, sonra düzelt.
 
 Sınır durumları asıl testtir: boş girdi, tek eleman, sıfır, negatif, çok büyük değer,
 eşzamanlı çağrı. Mutlu yol tek başına test sayılmaz.
