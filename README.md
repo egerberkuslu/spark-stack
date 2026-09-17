@@ -192,15 +192,25 @@ Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra ke
 Parçalar kendiliğinden birbirine bağlanır; aşağıdaki her satır kurulumun yazdığı bir ayardır,
 elle yapılan bir iş değil.
 
-| Bileşen | Modele nasıl ulaşır | Şirket kurallarını alır mı |
-|---|---|---|
-| Claude Code (makinede) | `.bashrc` → `ANTHROPIC_BASE_URL=:4000` | evet — rol gövdesi + skill |
-| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000` | evet — her-zaman-aktif skill, `AGENTS.md`, rol |
-| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000` | evet — `AGENTS.md` ve `/vault` |
-| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1` | evet — her isteğin sistem istemine eklenir |
-| Open WebUI | `OPENAI_API_BASE_URL` → `:4000/v1` | ilgisiz (sohbet arayüzü) |
-| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1` | **hayır** — aşağıya bak |
-| llama-swap | katmanlara servis adıyla (`haiku:8000`) | ilgisiz (yönlendirici) |
+| Bileşen | Modele nasıl ulaşır | Kuralları alır mı | Vault'ta araştırabilir mi |
+|---|---|---|---|
+| Claude Code (makinede) | `.bashrc` → `ANTHROPIC_BASE_URL=:4000` | evet | evet — `~/vault` + vault MCP + `wiki` |
+| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000` | evet | evet — `/vault` salt okunur |
+| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000` | evet | evet — `/vault` salt okunur |
+| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1` | evet | kısmen — yol sistem isteminde, dosya aracı çağırana bağlı |
+| Open WebUI | `OPENAI_API_BASE_URL` → `:4000/v1` | ilgisiz | hayır |
+| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1` | **hayır** | **hayır** — aşağıya bak |
+| llama-swap | katmanlara servis adıyla (`haiku:8000`) | ilgisiz | hayır |
+
+**Ajanlar vault'ta nasıl araştırıyor.** Erişim tek başına yetmiyordu: kaplara vault bağlıydı
+ama hiçbir şey ajana oraya bakmasını söylemiyordu. Artık kural metni, rol gövdeleri ve
+`AGENTS.md` vault'un yapısını anlatıyor — `wiki/index.md` konu haritası, `wiki/log.md` kararlar,
+`inbox/` işlenmemiş kaynaklar — ve geçmiş bir karara dayanan her cevapta önce oraya bakmasını,
+dayandığı sayfayı söylemesini, kayıt yoksa "vault'ta kayıt yok" demesini şart koşuyor.
+
+Host tarafında bunun üstüne claude-obsidian'ın kendi getirme hattı var (BM25 dizini, `wiki-query`,
+`wiki-retrieve`); `wiki "auth kararı neydi?"` onu kullanır. Kaplardaki ajanlar o hatta sahip
+değil, düz dosya araması yapar — aynı içeriğe ulaşır, sıralama daha kaba olur.
 
 **NemoClaw kuralları almıyor ve bu bilinçli.** O kap dışarıdan gelen isteği karşılayan, en az
 güvenilen giriş noktası; bilgi tabanını oraya bağlamak istenmedi. Gerekirse
