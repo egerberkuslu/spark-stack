@@ -77,6 +77,39 @@ die(){ _w "[$(date +%T)] HATA: $*"
     "$RED" "$R" "$*" "$LOGFILE" "$B" "$R"; exit 1; }
 trap 'die "beklenmedik hata: satır $LINENO"' ERR
 
+# ── Kesinti temizliği ──────────────────────────────────────────────────────
+#  Ctrl+C'de arkada iş bırakmıyoruz. İki şey kaçabiliyordu: ilerlemeyi basan
+#  alt süreç ve indirmeyi yapan konteyner. Docker istemcisini öldürmek
+#  konteyneri durdurmaz, o yüzden konteynere ad veriyoruz ve burada adıyla
+#  durduruyoruz. Çalışan alt süreç ve konteyner adı bu iki değişkende durur.
+#  Uzun süren indirme ön planda değil arka planda koşup `wait` ile beklenir:
+#  bash ön plandaki bir komut çalışırken trap işletmez, `wait` sırasında ise
+#  işletir. Kesintiye anında tepki vermesinin şartı bu.
+ARKA_PID=""; INDIR_KAP=""; ISLEM_PID=""
+temizle(){
+  trap - INT TERM HUP
+  for pid in "$ISLEM_PID" "$ARKA_PID"; do
+    [[ -n "$pid" ]] && { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; }
+  done
+  ARKA_PID=""; ISLEM_PID=""
+  printf '\r\033[K'
+  printf '\n%s  Kesildi.%s\n' "$YLW" "$R"
+  if [[ -n "$INDIR_KAP" ]] && [[ -n "${DKR:-}" ]] \
+     && dk ps -q --filter "name=^${INDIR_KAP}$" 2>/dev/null | grep -q .; then
+    printf '  indirme konteyneri durduruluyor: %s\n' "$INDIR_KAP"
+    dk stop -t 5 "$INDIR_KAP" >/dev/null 2>&1
+    dk rm -f "$INDIR_KAP" >/dev/null 2>&1
+  fi
+  INDIR_KAP=""
+  # Kurulmuş servisler bilerek ayakta bırakılıyor: yarıda kesilen bir kurulumda
+  # da kapı ve katmanlar çalışır durumda kalsın isteriz. Kapatmak istersen:
+  printf '  yarım kalan yerden devam:  %sbash install.sh --resume%s\n' "$B" "$R"
+  printf '  %sayakta kalan servisler:  spark status   ·  hepsini kapat:  spark down%s\n' "$D" "$R"
+  printf '  %sbir imaj çekimi başladıysa Docker onu arka planda bitirir (zararsız, önbelleğe girer)%s\n\n' "$D" "$R"
+  exit 130
+}
+trap temizle INT TERM HUP
+
 # Adım içi iş sayacı: sbegin'in ikinci argümanı o adımda kaç iş olduğunu söyler
 # (bayraklara göre hesaplanır), her iş başlamadan önce is "başlık" çağrılır.
 # Sayaç bildirilenden fazla iş görürse toplamı büyütür, yani yanlış bir sayı
@@ -101,9 +134,11 @@ send(){ DONE_WEIGHT=$((DONE_WEIGHT+${STEP_WEIGHT[$CUR]})); echo "${STEP_KEYS[$CU
 
 spin(){ local m="$1"; shift; local tmp; tmp=$(mktemp)
   ( "$@" >"$tmp" 2>&1 ) & local pid=$! mk='-\|/' i=0 t0; t0=$(date +%s)
+  ARKA_PID=$pid
   while kill -0 $pid 2>/dev/null; do
     printf '\r  %s│%s %s %s %s(%ss)%s ' "$D" "$R" "${mk:i++%4:1}" "$m" "$D" $(( $(date +%s)-t0 )) "$R"; sleep 0.4
-  done; wait $pid; local rc=$?; printf '\r\033[K'; cat "$tmp" >>"$LOGFILE"; rm -f "$tmp"; return $rc; }
+  done; wait $pid; local rc=$?; ARKA_PID=""
+  printf '\r\033[K'; cat "$tmp" >>"$LOGFILE"; rm -f "$tmp"; return $rc; }
 
 # Uzun süren dış kurulumlar (curl|bash gibi) için. spin()'in aksine çıktıyı
 # gizlemez: her satır loga tam, ekrana soluk ve kırpılmış düşer; dakikalarca
@@ -741,15 +776,21 @@ klasor_izle(){ # <etiket> <klasör> <toplam bayt>  (arka planda çalışır, ön
     bp=$b1; tp=$t1
   done; }
 hf_indir(){ # <etiket> <repo> <hedef klasör>  → ilerleme satırıyla indirir
-  local l=$1 repo=$2 d=$3 T t0 t1 b wpid rc
+  local l=$1 repo=$2 d=$3 T t0 t1 b wpid rc kap
   T=$(hf_toplam_bayt "$repo"); mkdir -p "$d"
   t0=$(date +%s)
+  # Konteynere ad veriyoruz ki kesintide adıyla durdurulabilsin
+  kap="sk-indir-${l//[^a-zA-Z0-9_.-]/-}"
+  dk rm -f "$kap" >/dev/null 2>&1 || true
   klasor_izle "$l" "$d" "$T" & wpid=$!
-  dk run --rm -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+  ARKA_PID=$wpid; INDIR_KAP=$kap
+  dk run --rm --name "$kap" -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
     -v "$MODELS":/models --entrypoint bash "$VLLM_IMAGE" \
-    -c "hf download '$repo' --local-dir /models/${d##*/} --max-workers ${HF_WORKERS:-16}" >>"$LOGFILE" 2>&1
-  rc=$?
-  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; printf '\r\033[K'
+    -c "hf download '$repo' --local-dir /models/${d##*/} --max-workers ${HF_WORKERS:-16}" >>"$LOGFILE" 2>&1 &
+  ISLEM_PID=$!
+  wait "$ISLEM_PID"; rc=$?
+  ISLEM_PID=""; INDIR_KAP=""
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; ARKA_PID=""; printf '\r\033[K'
   t1=$(( $(date +%s) - t0 )); (( t1 < 1 )) && t1=1
   b=$(du -sb "$d" 2>/dev/null | cut -f1); b=${b:-0}
   INDIRME_OZETI="$(insan_boyut "$b"), ort. $(insan_boyut $(( b / t1 )))/s, $(sure_metni "$t1")"

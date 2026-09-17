@@ -101,6 +101,19 @@ Tüm ayrıntı `/srv/ai/install.log` dosyasına yazılır.
 
 Kurulum kesilirse `--resume` ile kaldığı yerden devam eder; indirilmiş ağırlıklar tekrar indirilmez.
 
+**Ctrl+C arkada iş bırakmaz.** İndirme konteynerde koştuğu için, istemciyi öldürmek tek başına
+konteyneri durdurmuyordu; indirme görünmeden devam ediyordu. Artık her indirme konteyneri
+`sk-indir-<katman>` adıyla açılıyor ve kesintide adıyla durduruluyor, ilerlemeyi basan alt süreç
+de kapatılıyor. Aynısı terminali kapatmakta (SIGHUP) ve `kill` göndermekte de geçerli.
+
+Yarıda kesilen bir kurulumda o ana kadar açılmış servisler bilerek ayakta bırakılır: kapı ve inen
+katmanlar çalışmaya devam eder. Hepsini kapatmak istersen `spark down`, ne çalıştığını görmek
+için `spark status`.
+
+Tek istisna imaj çekimi: Docker indirmeyi sunucu tarafında sürdürür ve dışarıdan durdurulamaz.
+Zararsızdır, tamamlanıp önbelleğe girer ve bir sonraki koşuda tekrar indirilmez. Kesinti mesajı
+bunu ayrıca söyler.
+
 ---
 
 ## Doğrulama
