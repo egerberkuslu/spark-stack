@@ -172,7 +172,7 @@ Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra ke
 | `8888` | `opus` (vLLM) | `daily` | — |
 | `8001` | `fable` (vLLM) | `fable` | — |
 | `8081` | llama-swap durum ucu | `--with-swap` | `SWAP_PORT` |
-| `8300` | Agent Canvas paneli | `--with-canvas` | `CANVAS_PORT`, `CANVAS_BIND` |
+| `8300` | **Agent Canvas** paneli (OpenHands'in bugünkü adı) | `--with-canvas` | `CANVAS_PORT`, `CANVAS_BIND` |
 | `8400` | A2A köprüsü | `--with-a2a` | `A2A_PORT`, `A2A_BIND` |
 | `8080` | NemoClaw OpenShell gateway | `--with-nemoclaw` | NemoClaw yönetir |
 | `18789` | NemoClaw paneli | `--with-nemoclaw` | NemoClaw atar |
@@ -181,6 +181,29 @@ Hepsi varsayılan olarak `127.0.0.1`'e bağlıdır; hiçbiri kurulumdan sonra ke
 | `9000` | Whisper | `stt` profili | — |
 
 İki tanesi bilerek kaydırıldı. Agent Canvas kendi içinde 8000 dinler ama o portu `sonnet` kullandığı için dışarı 8300'den açılır. llama-swap da 8080 yerine 8081'e alındı, çünkü 8080 NemoClaw'ın OpenShell gateway'inin varsayılanı — `--all` ile ikisi birden kurulduğunda çakışırlardı.
+
+---
+
+## Ne neye bağlı
+
+Parçalar kendiliğinden birbirine bağlanır; aşağıdaki her satır kurulumun yazdığı bir ayardır,
+elle yapılan bir iş değil.
+
+| Bileşen | Modele nasıl ulaşır | Şirket kurallarını alır mı |
+|---|---|---|
+| Claude Code (makinede) | `.bashrc` → `ANTHROPIC_BASE_URL=:4000` | evet — rol gövdesi + skill |
+| Agent Canvas | ayar API'siyle tohumlanır → `litellm:4000` | evet — her-zaman-aktif skill, `AGENTS.md`, rol |
+| Claude Code (Canvas içinde, ACP) | `ANTHROPIC_BASE_URL` → `litellm:4000` | evet — `AGENTS.md` ve `/vault` |
+| A2A köprüsü | `A2A_GATEWAY_URL` → `litellm:4000/v1` | evet — her isteğin sistem istemine eklenir |
+| Open WebUI | `OPENAI_API_BASE_URL` → `:4000/v1` | ilgisiz (sohbet arayüzü) |
+| NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1` | **hayır** — aşağıya bak |
+| llama-swap | katmanlara servis adıyla (`haiku:8000`) | ilgisiz (yönlendirici) |
+
+**NemoClaw kuralları almıyor ve bu bilinçli.** O kap dışarıdan gelen isteği karşılayan, en az
+güvenilen giriş noktası; bilgi tabanını oraya bağlamak istenmedi. Gerekirse
+`nemoclaw onboard --host-mount ~/vault/kurallar:/vault/kurallar` ile salt okunur bağlanabilir,
+ama varsayılan kapalı. Yani NemoClaw'a verilen iş, kuralların uygulanmasının beklenmediği iş
+olmalı.
 
 ---
 
