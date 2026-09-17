@@ -2,9 +2,9 @@
 ###############################################################################
 #  spark-stack — DGX Spark yerel kod asistanı · Docker tabanlı kurulum        #
 #                                                                             #
-#    bash install.sh --demo             haiku + sonnet           ~45 GB      #
-#    bash install.sh                    + opus                   ~65 GB      #
-#    bash install.sh --all              dört katman + eklentiler ~132 GB     #
+#    bash install.sh --demo             haiku + sonnet           ~45 GB       #
+#    bash install.sh                    + opus                   ~65 GB       #
+#    bash install.sh --all              dört katman + eklentiler ~132 GB      #
 #                                                                             #
 #    --token hf_xxx      HuggingFace anahtarını komutla ver                   #
 #    --with-fable        dördüncü katman (en yüksek kalite)                   #
@@ -25,7 +25,7 @@
 #  Modeller, sunucular, veritabanları, MCP sunucuları — hepsi konteynerde.    #
 ###############################################################################
 set -Eeuo pipefail
-VERSION="2.0-docker"
+VERSION="3.0-ajanlar"
 START_TS=$(date +%s)
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -173,9 +173,22 @@ if [[ "$MODE" == uninstall ]]; then
     echo "  NemoClaw kaldırılıyor"
     nemoclaw uninstall --yes >/dev/null 2>&1 || echo "  ! olmadı — elle: nemoclaw uninstall --yes"
   fi
-  sudo rm -rf "$AI_ROOT"; sudo rm -f /usr/local/bin/spark
+  # Kurduğumuz rolleri ve skill'i geri alıyoruz. SENİN içeriğine dokunmuyoruz:
+  # vault, kurallar ve proje klasörü olduğu gibi kalır — onlar senin yazdığın
+  # şeyler, kurulumun ürettiği dosya değil.
+  for r in spark-kod spark-test spark-denetci; do rm -f "$HOME/.claude/agents/$r.md"; done
+  rm -rf "$HOME/.claude/skills/sirket-kurallari"
+  echo "  roller ve sirket-kurallari skill'i kaldırıldı"
+  sudo rm -rf "$AI_ROOT"; sudo rm -f /usr/local/bin/spark /usr/local/bin/wiki
   sed -i '/# >>> spark-stack >>>/,/# <<< spark-stack <<</d' ~/.bashrc
-  echo "  silindi"; exit 0
+  VK="${OBSIDIAN_VAULT:-$HOME/vault}"
+  echo "  silindi"
+  echo
+  echo "  Dokunulmayanlar (senin içeriğin):"
+  [[ -d "$VK" ]] && echo "    $VK  (bilgi tabanı ve kurallar)"
+  [[ -f "$HOME/projects/AGENTS.md" ]] && echo "    $HOME/projects  (projeler ve AGENTS.md)"
+  echo
+  exit 0
 fi
 
 (( WITH_FABLE )) && STEP_WEIGHT[4]=90
@@ -231,6 +244,29 @@ NEED=$(( WITH_FABLE ? 200 : 100 ))
 ok "boş disk ${FREE}GB (gereken ~${NEED}GB)"
 (( FREE < NEED )) && die "disk yetersiz"
 curl -sf https://huggingface.co >/dev/null || die "internet yok"
+
+# Port çakışması: kurulumun ortasında anlaşılmaz bir hatayla düşmek yerine
+# burada söyleyelim. Yalnız kuracağımız parçaların portlarına bakıyoruz.
+port_busy(){ (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3<&-; return 0; } || return 1; }
+PORT_LIST=("4000:kapı" "8000:sonnet" "8002:haiku")
+[[ " ${TIERS[*]} " == *" opus "* ]] && PORT_LIST+=("8888:opus")
+(( WITH_FABLE ))   && PORT_LIST+=("8001:fable")
+(( WITH_SWAP ))    && PORT_LIST+=("${SWAP_PORT:-8081}:llama-swap")
+(( WITH_CANVAS ))  && PORT_LIST+=("${CANVAS_PORT:-8300}:Agent Canvas")
+(( WITH_A2A ))     && PORT_LIST+=("${A2A_PORT:-8400}:A2A köprüsü")
+(( WITH_EXTRAS ))  && PORT_LIST+=("3000:Open WebUI" "6333:Qdrant")
+(( WITH_NEMOCLAW )) && PORT_LIST+=("8080:NemoClaw gateway")
+DOLU=()
+for spec in "${PORT_LIST[@]}"; do
+  if port_busy "${spec%%:*}"; then DOLU+=("${spec%%:*} (${spec#*:})"); fi
+done
+if (( ${#DOLU[@]} )); then
+  warn "şu portlar şu an dolu: ${DOLU[*]}"
+  log "   kurulumun kendi konteynerleriyse sorun değil; başka bir şeyse çakışacak"
+  log "   bakmak için:  ss -ltnp | grep -E '$(printf '%s|' "${DOLU[@]%% *}" | sed 's/|$//')'"
+else
+  ok "gereken portlar boş (${#PORT_LIST[@]} port kontrol edildi)"
+fi
 
 TOKSRC=""
 [[ -n "${HF_TOKEN:-}" ]] && TOKSRC="komut satırı/ortam"
@@ -982,6 +1018,44 @@ RESP="$(curl -s --max-time 180 http://localhost:4000/v1/messages \
   -d "{\"model\":\"$FALLBACK_MAIN\",\"max_tokens\":30,\"messages\":[{\"role\":\"user\",\"content\":\"Sadece OK yaz.\"}]}" \
   | jq -r '.content[0].text // .error.message // "cevap yok"')"
 [[ "$RESP" == *OK* ]] && ok "uçtan uca çalışıyor (Claude Code → kapı → $FALLBACK_MAIN)" || warn "beklenmedik cevap: $RESP"
+
+# Kurduğumuz her parçayı tek tek yokluyoruz. "Kuruldu" demek yetmez; neyin
+# gerçekten cevap verdiğini kurulum bitmeden görmek gerekir.
+EKSIK=0
+v_ok(){ ok "$1"; }
+v_no(){ warn "$1"; EKSIK=$((EKSIK+1)); }
+
+KSAY=$(ls -1 "$KURALLAR"/*.md 2>/dev/null | wc -l)
+(( KSAY )) && v_ok "kurallar: $KSAY dosya · $KURALLAR" || v_no "kural dosyası yok: $KURALLAR"
+
+RSAY=$(ls -1 "$HOME/.claude/agents"/spark-*.md 2>/dev/null | wc -l)
+(( RSAY == 3 )) && v_ok "roller (Claude Code): $RSAY/3" || v_no "roller eksik (Claude Code): $RSAY/3"
+
+if (( WITH_CANVAS )); then
+  CSAY=$(ls -1 "$DATA/canvas/agents"/spark-*.md 2>/dev/null | wc -l)
+  (( CSAY == 3 )) && v_ok "roller (Canvas): $CSAY/3" || v_no "roller eksik (Canvas): $CSAY/3"
+  CP="${CANVAS_PORT:-8300}"
+  CSUB="$(curl -sf --max-time 10 "http://127.0.0.1:$CP/api/settings" -H "X-Session-API-Key: ${CANVAS_KEY:-}" 2>/dev/null \
+          | jq -r '[(.. | objects | select(has("enable_sub_agents")) | .enable_sub_agents)] | first // "?"' 2>/dev/null)"
+  [[ "$CSUB" == "true" ]] && v_ok "Agent Canvas: alt ajan devri açık" \
+                          || v_no "Agent Canvas alt ajan devri kapalı (okunan: $CSUB) — Settings → Agent → Sub-agents"
+fi
+
+if (( WITH_A2A )); then
+  AP="${A2A_PORT:-8400}"
+  ASK="$(curl -sf --max-time 10 "http://127.0.0.1:$AP/.well-known/agent-card.json" 2>/dev/null | jq -r '[.skills[].id]|join(", ")' 2>/dev/null)"
+  [[ -n "$ASK" ]] && v_ok "A2A köprüsü yayında: $ASK" || v_no "A2A kartı okunamadı — spark logs a2a"
+fi
+
+(( WITH_NEMOCLAW )) && { have nemoclaw && v_ok "NemoClaw CLI hazır" || v_no "nemoclaw komutu yok"; }
+(( WITH_SWAP )) && { curl -sf --max-time 5 "http://127.0.0.1:${SWAP_PORT:-8081}/health" >/dev/null 2>&1 \
+  && v_ok "llama-swap cevap veriyor" || v_no "llama-swap cevap vermiyor — spark logs llamaswap"; }
+
+if (( EKSIK )); then
+  warn "$EKSIK başlık eksik kaldı — yukarıdaki satırlara bak, $LOGFILE içinde ayrıntı var"
+else
+  ok "kurulan her parça doğrulandı"
+fi
 send
 
 T=$(( $(date +%s)-START_TS ))
