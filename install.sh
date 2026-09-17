@@ -670,10 +670,14 @@ if [[ -d "$SRC_DIR/roller" ]]; then
 
   is "ortak skill dizini ve proje sözleşmesi"
   # Ortak skill dizini: Canvas kabı bunu ~/.agents/skills olarak görür.
-  # Burada ilk kez derleniyor (kurallar + host skill'leri). claude-obsidian
-  # 10. adımda indiği için orada bir kez daha derlenip 15 skill'i de girecek.
+  # Dizin her seferinde sıfırdan derlenir (silinen skill kapta kalmasın diye).
+  # Bu yüzden daha önce kurulmuş bir claude-obsidian varsa onu bu koşuda da
+  # veriyoruz: yoksa "--with-fable --resume" gibi bilgi tabanı seçili olmayan
+  # bir koşu, kurulu 15 skill'i sessizce düşürürdü. Bilgi tabanı bu koşuda
+  # kuruluyorsa 10. adım dizini zaten bir kez daha derliyor.
+  CO_VAR=""; [[ -d "$AI_ROOT/claude-obsidian/skills" ]] && CO_VAR="$AI_ROOT/claude-obsidian"
   bash "$SRC_DIR/roller/skill-birlestir.sh" "$DATA/canvas/agents-skills" \
-    "$KURALLAR" "" "$HOME/.claude/skills" >>"$LOGFILE" 2>&1 || true
+    "$KURALLAR" "$CO_VAR" "$HOME/.claude/skills" >>"$LOGFILE" 2>&1 || true
 
   # Proje sözleşmesi: AGENTS.md'yi hem Claude Code hem Agent Canvas kendiliğinden
   # okur ve tam metin sistem istemine koyar (SDK onu tetikleyicisiz bir skill'e

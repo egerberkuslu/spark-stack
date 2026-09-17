@@ -155,16 +155,37 @@ bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~206 GB   90
 ```
 
 **Tam indirme.** Her şeyi isteyen komut `--all`: dört katman, llama-swap, Agent Canvas, A2A
-köprüsü, NemoClaw kabı, katalog rolleri, bilgi tabanı ve ekstralar. Bilgi tabanı motorunu
-değiştirmek istersen tek bayrak ekliyorsun:
+köprüsü, NemoClaw kabı, katalog rolleri, bilgi tabanı ve ekstralar.
+
+Pratikte yazacağın komutlar bunlar:
 
 ```bash
-bash install.sh --all --token hf_xxx                    # bilgi tabanı: obsidian (varsayılan)
-bash install.sh --all --bilgi graphify --token hf_xxx   # bilgi tabanı: graphify
+# Sıfırdan, her şey dahil (bilgi tabanı: obsidian)
+bash install.sh --all --token hf_xxx
+
+# Sıfırdan, bilgi tabanı graphify olsun
+bash install.sh --all --bilgi graphify --token hf_xxx
+
+# Mevcut kuruluma dördüncü katmanı (fable) ekle
+bash install.sh --with-fable --resume
+
+# Mevcut kuruluma hem fable hem graphify ekle
+bash install.sh --with-fable --bilgi graphify --resume
 ```
 
-Süre çoğunlukla indirmede geçiyor, 1 Gbit hatta yaklaşık bir saat. İndirme boyunca her katman
-için yüzde, hız ve kalan süre tek satırda görünür.
+`--resume` verirken `--token` gerekmez, anahtar `.env`'den okunur. Bayraklar birikimlidir: bir
+bayrağı sonradan eklemek önceki kurulumu bozmaz, yalnız eksik parçayı tamamlar.
+
+Süre çoğunlukla indirmede geçiyor, 1 Gbit hatta `--all` için 1,5 saat civarı. İndirme boyunca
+her katman için yüzde, hız ve kalan süre tek satırda görünür.
+
+> **fable ilk kez kurulurken üç iş yapar:** ağırlıkları indirir (133 GB), yan katmanları fp8'e
+> çevirir (~10 dk, +13 GB, çözme hızına +%20) ve yolunu compose'a yazar. Bunlardan biri yarıda
+> kalırsa `--resume` kaldığı yerden sürdürür; biten adım tekrar çalışmaz. Hazırlığı istemiyorsan
+> `.env` içinde `FABLE_HYBRID=0`.
+>
+> Daha önce Nemotron ile kurduysan kurulum `.env`'i kendisi günceller ve bunu ekrana yazar;
+> eski modele dönmek istersen komutu da söyler.
 
 ![Kurulum profilleri](docs/figures/spark-kurulum-profilleri.png)
 
@@ -242,10 +263,15 @@ sonuç verirdi. Pratikte tamamlanmış adımlar saniyeler sürer.
 **Sonradan parça eklemek de aynı komut.** Kurulum bittikten sonra fikrini değiştirirsen:
 
 ```bash
-bash install.sh --with-fable --resume       # dördüncü katmanı ekle
-bash install.sh --bilgi graphify --resume   # bilgi tabanı motorunu değiştir
-bash install.sh --with-canvas --resume      # Agent Canvas ekle
+bash install.sh --with-fable --resume                    # dördüncü katmanı ekle
+bash install.sh --bilgi graphify --resume                # bilgi tabanı motorunu değiştir
+bash install.sh --with-fable --bilgi graphify --resume   # ikisini birden
+bash install.sh --with-canvas --resume                   # Agent Canvas ekle
 ```
+
+Bayraklar birikimlidir: `--with-fable --resume` yalnız fable'ı ekler, daha önce kurduğun Canvas
+ya da bilgi tabanı olduğu gibi kalır. Motoru değiştirdiğinde eski motorun kurduğu skill'ler
+ortak dizin yeniden derlendiği için temizlenir.
 
 **Aynı anda iki kurulum çalışmaz.** `/srv/ai/install.pid` kilidi var; ikincisi açılmaz ve
 sebebini söyler, birincisinin süren indirmesine de dokunmaz. Kilit normal bitişte de kesintide
