@@ -69,6 +69,45 @@ Makineye kurulan tek bileşen Claude Code'dur (tek dosyalık CLI, terminalde ça
 
 ---
 
+## Bir promptun hayat öyküsü
+
+![Bir promptun hayat öyküsü](docs/figures/spark-prompt-oykusu.png)
+
+Terminaldeki Claude Code'a da yazsan Agent Canvas paneline de yazsan istek aynı beş
+duraktan geçer. Diyelim ki "kullanıcı kaydı için bir endpoint yaz" dedin.
+
+**1 · Bağlam.** İstek daha yola çıkmadan üç şey sistem istemine girer: proje kökündeki
+`AGENTS.md`, `kurallar/` altındaki dört dosya ve kurulu rollerin listesi. Kuralların
+tetikleyicisi yoktur, yani okunup okunmaması ajanın kararına kalmaz; metin zaten oradadır.
+Model ilk kelimeyi okumadan şirketin sözleşmesine bağlanmış olur.
+
+**2 · Kapı.** `ANTHROPIC_BASE_URL` yerel kapıyı gösterdiği için istek buluta değil
+`localhost:4000`'e gider. LiteLLM tek adrestir: hem OpenAI hem Anthropic yüzeyini konuşur,
+tanımadığı bir `claude-*` model adı gelirse ana katmana düşürür.
+
+**3 · Katman.** Kapı isteği llama-swap'a verir, o da katmanın konteyneri kapalıysa açar ve
+ısınmasını bekler. Günlük üç katman aynı anda açık kalabilir; `fable` açıldığında üçü birden
+kapanır, çünkü 128 GB'a hepsi sığmaz. Bu yüzden `fable` otomasyondan çağrılmaz, insanın
+bilerek seçtiği yerdir.
+
+**4 · Model.** vLLM cevabı üretir; ağırlıklar NVFP4, backend Marlin
+([neden](#neden-bu-dörtlü)).
+
+**5 · İş bölümü.** İş çok adımlıysa tek ajan baştan sona götürmez. `spark-kod` yazar ve neyin
+test edilmesi gerektiğini söyleyerek devreder, `spark-test` testi yazar ve **çalıştırır**,
+çıktısını rapora koyar, kırılan testi kendisi düzeltmeyip geri devreder, `spark-denetci`
+değişikliğin tamamını okur ve PR açıklamasını hazırlar. PR açılır ama birleştirilmez; o karar
+insanındır.
+
+Yol boyunca iki kez bilgi tabanına sapılır: başta kural okunur, sonunda geçmiş bir karar ya da
+kaynak gerektiğinde vault'ta aranır. Vault iki tarafta da salt okunur bağlıdır, yani ajan okur
+ama yazmaz.
+
+Nereden başladığın yalnızca ilk adımı değiştirir. Roller, kurallar, skill'ler ve bilgi tabanı
+iki tarafta da aynıdır; ayrıntı [aşağıda](#nereden-çalışırsan-çalış-aynı-sistem).
+
+---
+
 ## Kurulum seçenekleri
 
 > **Her kurulum HuggingFace anahtarı ister** — `--demo` dahil, `--all` dahil. Model
@@ -494,6 +533,44 @@ obsidian                    # uygulamayı aç
 ```
 
 Kaynak `~/vault/inbox/` altına konur, `/claude-obsidian:wiki-ingest` ile işlenir; `wiki-query` yalnızca vault'taki kanıttan cevap üretir.
+
+### Vault'a bilgi nasıl girer
+
+![Vault'a bilgi koymanın yolları](docs/figures/spark-vault-giris.png)
+
+Beş yol var ve hepsi aynı vault'a yazar. Aralarındaki gerçek fark kaynak izinin tutulup
+tutulmamasıdır: ilk üçünde bir iddianın nereden geldiği sonradan takip edilebilir, son ikisinde
+edilemez. İkisi de meşrudur, hangisini seçtiğini bilmen yeter.
+
+**Kaynak atma** ana yoldur. Dosyayı `~/vault/inbox/` içine koyarsın, sonra
+`wiki "inbox'taki şu dosyayı işle"` dersin. `wiki-ingest` okuyup bağlantılı sayfalara çevirir,
+her iddiayı kaynağına bağlar, ham kopyayı `.raw/` altında değişmez olarak saklar. Aynı kaynak
+sonradan değişirse üzerine yazılmaz, yeni bir kayıt açılır.
+
+`inbox/` şartı keyfi değil: vault dışındaki bir yol kalıcı kaynak sayılmaz, çünkü o dosya
+yarın yerinde olmazsa sayfadaki alıntının dayanağı kalmaz. Masaüstündeki bir PDF'i
+gösterdiğinde "önce vault'a koy" demesinin sebebi budur. URL için ayrıca onay ister ve hangi
+alan adına çıkacağını söyler. PDF, ses ya da görüntü için adaptör yoksa "okudum" demez;
+konumu saklayıp okuyamadığını yazar.
+
+**Karar kaydetme** konuşmanın içinden çalışır: bir karar aldın ya da bir cevap işine yaradı,
+`save` skill'i onu tek bir nota yazar. Uzun bir oturumun sonunda "şunu kaydet" demek için bu.
+
+**Otomatik araştırma** (`autoresearch`) sınırlı bir tur koşup kaynaklı bir taslak çıkarır;
+taslağı ayrıca gözden geçirip alırsın. İnternet erişimi ister.
+
+**Elle yazma** her zaman geçerlidir. Vault düz Markdown, veritabanı yok; `wiki/` altına dosya
+açıp yazarsın ya da Obsidian'da yazarsın, hiçbir şey bozulmaz.
+
+**Kural değiştirme** ayrı bir iştir. `kurallar/` altındaki dosyayı düzenlediğinde iki taraftaki
+bütün ajanlar aynı anda yeni kurala bağlanır. Kurulumu tekrarlamana gerek yoktur, çünkü kuralın
+metni hiçbir yere kopyalanmaz, hep oradan okunur.
+
+**Yazma işi makinede olur, Canvas'ta değil.** Kapta vault salt okunur bağlıdır. Bu bilerek
+böyledir: ajanın kendi ürettiği metni yarın kaynak diye geri okumasını istemiyoruz.
+
+Ekledikten sonra elle bir şey yapman gerekmez. Arama indeksi bayatladığını fark eder, eksik bir
+indeksi servis etmek yerine yeniden kurma komutunu verir.
 
 Retrieval BM25 ile yerel ve deterministiktir — embedding modeli gerekmez, ek bellek kullanmaz. Mevcut bir vault varsa `adopt` akışıyla içeriğe dokunmadan devralınır.
 
