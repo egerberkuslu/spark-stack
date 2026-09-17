@@ -242,10 +242,10 @@ tier_desc(){ case "$1" in
   haiku)  echo "hızlı Qwen · anlık cevap · commit mesajı" ;;
   sonnet) echo "hızlı NVIDIA · günlük iş · ~108 tok/s" ;;
   opus)   echo "Qwen kalite · ciddi kod (varsayılan)" ;;
-  fable)  echo "NVIDIA ağır · en zor işler · tek başına" ;;
+  fable)  echo "Qwen Flash-Next · 6B aktif · çok kipli · tek başına" ;;
 esac; }
 tier_port(){ case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; esac; }
-tier_size(){ case "$1" in haiku) echo "~27 GB";; sonnet) echo "~22 GB";; opus) echo "~23 GB";; fable) echo "~80 GB";; esac; }
+tier_size(){ case "$1" in haiku) echo "~27 GB";; sonnet) echo "~22 GB";; opus) echo "~23 GB";; fable) echo "~133 GB";; esac; }
 DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
@@ -335,7 +335,7 @@ $( ((WITH_CANVAS)) && echo "    ${B}canvas${R}   Agent Canvas: ajan kontrol merk
 $( ((WITH_A2A))    && echo "    ${B}a2a${R}      A2A köprüsü: roller protokolle adreslenebilir       :8400" )
 $( ((WITH_NEMOCLAW)) && echo "    ${B}nemoclaw${R} NVIDIA NemoClaw: ajan OpenShell kabında, model kapıdan" )
 
-  ${B}İNDİRME${R}  $( ((DEMO)) && echo "~50 GB" || { ((WITH_FABLE)) && echo "~153 GB" || echo "~73 GB"; } )
+  ${B}İNDİRME${R}  $( ((DEMO)) && echo "~50 GB" || { ((WITH_FABLE)) && echo "~206 GB" || echo "~73 GB"; } )
   ${D}1 Gbit hatta $( ((DEMO)) && echo "15-20 dk" || { ((WITH_FABLE)) && echo "50-70 dk" || echo "30-40 dk"; } ) \
 (indirme + ilk açılışta GPU çekirdeği derleme dahil)${R}
 BANNER
@@ -357,7 +357,7 @@ else
 fi
 is "disk ve ağ"
 FREE=$(df -BG --output=avail "$AI_ROOT" | tail -1 | tr -dc '0-9')
-NEED=$(( WITH_FABLE ? 230 : 130 ))
+NEED=$(( WITH_FABLE ? 290 : 130 ))
 (( WITH_NEMOCLAW )) && NEED=$(( NEED + 10 ))    # OpenShell gateway + kap imajları
 ok "boş disk ${FREE}GB (gereken ~${NEED}GB)"
 (( FREE < NEED )) && die "disk yetersiz"
@@ -696,7 +696,10 @@ ok "$CDIR hazır · kurallar, roller ve 'spark' komutu kuruldu"
 send
 
 # ── 3 İMAJLAR ───────────────────────────────────────────────────────────────
-sbegin 3 $(( 3 + WITH_SWAP * 2 + WITH_CANVAS + WITH_EXTRAS * 2 ))
+# Flash-Next seçiliyse fable kendi yamalı imajını ister, o da bir iş sayılır
+FABLE_IMAJ_IS=0
+(( WITH_FABLE )) && [[ "${FABLE_REPO:-}" == *Flash-Next* ]] && FABLE_IMAJ_IS=1
+sbegin 3 $(( 3 + WITH_SWAP * 2 + WITH_CANVAS + WITH_EXTRAS * 2 + FABLE_IMAJ_IS ))
 # Docker API akışını katman bazında toplayıp tek satır ilerleme basan yardımcı
 mkdir -p "$AI_ROOT/bin"
 cat > "$AI_ROOT/bin/imaj-ilerleme.py" <<'PYEOF'
@@ -778,6 +781,29 @@ if (( WITH_SWAP )); then
       || die "statik docker CLI indirilemedi: .env içinde DOCKER_CLI_VERSION dene"
   fi
 fi
+if (( WITH_FABLE )) && [[ "${FABLE_REPO:-}" == *Flash-Next* ]]; then
+  # Flash-Next'in 51 GB'lık PLE tablosunu diskten sunma yeteneği upstream vLLM'de
+  # yok. Resmî önizleme imajının üstüne yamayı ekleyen yapıyı burada kuruyoruz;
+  # onsuz katman belleğe sığmaz. Yapı imajı çekip yamaları uygular, ~1 dk sürer.
+  is "fable imajı: vLLM + PLE yaması"
+  FDIR="$AI_ROOT/qwen38-flash-dgx"
+  FIMG="${FABLE_IMAGE:-qwen38-flash-dgx:latest}"
+  if dk image inspect "$FIMG" >/dev/null 2>&1; then
+    ok "fable imajı zaten kurulu: $FIMG"
+  else
+    if [[ -d "$FDIR/.git" ]]; then spin "PLE yaması güncelleniyor" git -C "$FDIR" pull -q || true
+    else spin "PLE yaması indiriliyor" git clone -q --depth 1 \
+           https://github.com/blazux/qwen3.8-Flash-DGX "$FDIR" || warn "yama deposu indirilemedi"; fi
+    if [[ -f "$FDIR/Dockerfile" ]]; then
+      stream "fable-imaj" dk build -t "$FIMG" "$FDIR" \
+        && ok "fable imajı kuruldu: $FIMG" \
+        || { warn "fable imajı kurulamadı; katman PLE yaması olmadan açılmaz"
+             log "   elle:  cd $FDIR && docker build -t $FIMG ."; }
+    else
+      warn "Dockerfile bulunamadı: $FDIR"
+    fi
+  fi
+fi
 if (( WITH_CANVAS )); then
   CANVAS_IMG="ghcr.io/openhands/agent-canvas:${CANVAS_TAG:-1.19.0}"
   pull_image "$CANVAS_IMG" || die "Agent Canvas imajı indirilemedi: $CANVAS_IMG"
@@ -808,6 +834,32 @@ hf_toplam_bayt(){ # <repo> → bayt; API cevap vermezse 0. Sonuç önbelleğe al
     | jq -r '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add // 0' 2>/dev/null)"
   [[ "$v" =~ ^[0-9]+$ ]] || v=0
   HF_BOYUT[$repo]=$v; echo "$v"; }
+
+# Ağırlıklar bu makinenin belleğine sığıyor mu? İndirmeden önce söylüyoruz:
+# yüz gigabaytı indirip açılışta OOM almak pahalı bir öğrenme yolu. Engellemiyor,
+# çünkü hangi modeli istediğine sen karar veriyorsun; yalnız sonucu önden yazıyor.
+# Spark'ta CPU ile GPU aynı belleği paylaşır, bu yüzden MemTotal doğru ölçüt.
+#
+# Diskteki boyut her zaman yerleşik boyut değildir: Flash-Next'in 51 GB'lık PLE
+# tablosu NVMe'den okunuyor, yerleşik kısım ~75 GB. Böyle bir katman için
+# .env'e <KATMAN>_RESIDENT_GB yazılır ve karşılaştırma onunla yapılır.
+bellek_uyar(){ # <katman> <repo>
+  local t=$1 repo=$2 T RAM kb res yer
+  T="$(hf_toplam_bayt "$repo")"; (( T > 0 )) || return 0
+  kb="$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)"; kb="${kb:-0}"
+  RAM=$(( kb * 1024 )); (( RAM > 0 )) || return 0
+  res="${t^^}_RESIDENT_GB"; res="${!res:-}"
+  if [[ "$res" =~ ^[0-9]+$ ]]; then
+    yer=$(( res * 1000000000 ))
+    (( yer * 100 < RAM * 85 )) && { log "$t: diskte $(insan_boyut "$T"), bellekte ~${res} GB (kalanı diskten okunur)"; return 0; }
+  else
+    yer=$T
+  fi
+  (( yer * 100 < RAM * 85 )) && return 0
+  warn "$t ağırlıkları $(insan_boyut "$yer"), makinenin toplam belleği $(insan_boyut "$RAM")"
+  log "   ağırlıklar + KV cache + işletim sistemi aynı belleği paylaşır"
+  log "   bu katman açılmayabilir; açılmazsa .env içinde ${t^^}_REPO satırını değiştir"
+  log "   indirme yine de sürüyor: model seçimi senin"; }
 
 # Bir katman gerçekten tam indi mi? Tek başına config.json'a bakmak yanlıştı:
 # o küçük dosya ilk inenlerden biri, indirme ortasında kesilince katman "zaten
@@ -895,6 +947,7 @@ pull_model(){ # pull_model <katman>
   local t=$1 repo_var="${1^^}_REPO" repo
   repo="${!repo_var}"
   depo_degistiyse_temizle "$MODELS/$t" "$repo"
+  bellek_uyar "$t" "$repo"
   if model_tam_mi "$MODELS/$t" "$repo"; then
     is "$t: zaten indirilmiş"
     ok "$t = $(tier_repo "$t") ($(du -sh "$MODELS/$t"|cut -f1), bütünlük doğrulandı)"; return 0; fi

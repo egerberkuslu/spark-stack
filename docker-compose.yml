@@ -262,30 +262,57 @@ services:
       --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
     healthcheck: *health
 
-  # ── fable · Nemotron-3-Super-120B-A12B · NVIDIA ağır · tek başına ─────────
+  # ── fable · Qwen3.8-Flash-Next · tek başına ───────────────────────────────
+  #  Checkpoint 133 GB ama hepsi bellekte durmuyor. 51 GB'lık n-gram gömme
+  #  tablosu (PLE) saf bir arama tablosu ve bir token yalnız 16 satırına
+  #  dokunuyor, bu yüzden NVMe'den mmap ile sunuluyor. Yerleşik ağırlık ~75 GB'a
+  #  iniyor, havuzun kalanı KV cache'e gidiyor.
+  #
+  #  Bu yetenek upstream vLLM'de YOK. FABLE_IMAGE, resmî vLLM önizleme imajının
+  #  üstüne PLE yamasını ekleyen yerel yapıyı gösterir; install.sh onu kurar
+  #  (blazux/qwen3.8-Flash-DGX, Apache-2.0). Yama ayrıca GB10'da prefix cache
+  #  ve belirlenimli top-k hatalarını da düzeltiyor.
   fable:
     <<: *vllm
+    image: ${FABLE_IMAGE:-qwen38-flash-dgx:latest}
     container_name: sk-fable
     profiles: [fable]
     ports: ["127.0.0.1:8001:8000"]
+    shm_size: 16g
     volumes:
       - ${AI_ROOT:-/srv/ai}/models:/models
       - ${AI_ROOT:-/srv/ai}/data/cache-fable:/root/.cache/vllm
+    environment:
+      # PLE tablosu diskten okunur: bunlar olmadan model belleğe sığmaz
+      VLLM_PLE_MMAP: "1"
+      VLLM_PLE_MMAP_WORKERS: "${FABLE_PLE_WORKERS:-32}"
+      VLLM_PLE_MMAP_MADVISE: "${FABLE_PLE_MADVISE:-random}"
+      VLLM_PLE_MMAP_PREWARM: "${FABLE_PLE_PREWARM:-0}"
+      # Yamanın getirdikleri: GB10'da belirlenimli top-k ve taslak sözlüğü
+      VLLM_QSA_DET_TOPK: "1"
+      VLLM_QSA_DET_LIB: /opt/llm/kernel-det/_C_det.so
+      VLLM_MTP_DRAFT_VOCAB: /opt/llm/draft_vocab_65536.npy
+      VLLM_USE_FLASHINFER_SAMPLER: "1"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
     command: >
       vllm serve /models/fable --served-model-name fable
       --host 0.0.0.0 --port 8000
-      --max-model-len ${FABLE_CTX:-65536}
-      --gpu-memory-utilization ${FABLE_MEM:-0.82}
-      --max-num-seqs 2
-      --mamba-backend flashinfer
+      --load-format safetensors
+      --max-model-len ${FABLE_CTX:-262144}
+      --gpu-memory-utilization ${FABLE_MEM:-0.80}
+      --max-num-seqs ${FABLE_SEQS:-6}
+      --enable-prefix-caching
+      --enable-chunked-prefill --max-num-batched-tokens 8192
+      --no-enable-flashinfer-autotune
+      --kv-cache-dtype fp8
       --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
-      --reasoning-parser nemotron_v3
+      --reasoning-parser qwen3
       --tool-call-parser qwen3_coder
       --enable-auto-tool-choice
     healthcheck:
       <<: *health
-      retries: 120
-      start_period: 1800s
+      retries: 200
+      start_period: 2400s
 
   # ── ekstralar ─────────────────────────────────────────────────────────────
   webui:

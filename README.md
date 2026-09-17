@@ -31,7 +31,7 @@ bütçe, yalıtım seviyeleri, tek makinenin eşzamanlılık tavanı.
 | `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~27 GB | 8002 |
 | `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~22 GB | 8000 |
 | `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~23 GB | 8888 |
-| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~80 GB | 8001 |
+| `fable` | `nvidia/Qwen3.8-Flash-Next-NVFP4` | Qwen | 6B (MoE) | En zor işler, **tek başına çalışır** | ~133 GB | 8001 |
 
 İlk üç katman aynı anda açık durur (~72 GB ağırlık + KV cache). `fable` açıldığında diğerleri kapanır.
 
@@ -51,7 +51,27 @@ Depolar `.env` içinde `HAIKU_REPO`, `SONNET_REPO`, `OPUS_REPO`, `FABLE_REPO` ol
 
 **haiku = Qwen3.6-35B-A3B.** 3B aktif MoE, 2.54M indirme. Hafif işler ve sonnet'e Qwen alternatifi.
 
-**fable = Nemotron-3-Super.** NVFP4 ile **ön eğitilmiş** (sonradan kuantize değil), MTP dahili. 12B aktif → ~20 tok/s; ajan döngüsü için değil, tek zor soru için.
+**fable = Qwen3.8-Flash-Next.** 125B toplam, 6B aktif, çok kipli (görsel ve video girdi), 262K
+bağlam. Hibrit dikkat: Gated DeltaNet + Qwen Sparse Attention.
+
+Checkpoint diskte 133 GB, yani Spark'ın 128 GB'ına bakınca sığmıyor gibi durur. Sığmasının sebebi
+şu: o boyutun 51 GB'ı n-gram gömme tablosu (PLE) ve o tablo saf bir arama yapısı, bir token yalnız
+16 satırına dokunuyor. Tabloyu NVMe'den `mmap` ile sunduğunda **yerleşik ağırlık ~76 GB'a iniyor**
+ve havuzun kalanı KV cache'e gidiyor. Ölçülen sonuç: **~37-45 tok/s** (kodda üst uçta), 1M'in
+üzerinde token'lık KV havuzu, ilk yükleme ~13 dakika.
+
+> **Bu yetenek upstream vLLM'de yok.** `fable` katmanı bu yüzden kendi imajını kullanır: resmî
+> `vllm/vllm-openai:qwen38-flash-next` önizlemesinin üstüne PLE yamasını ekleyen yerel bir yapı
+> ([blazux/qwen3.8-Flash-DGX](https://github.com/blazux/qwen3.8-Flash-DGX), Apache-2.0). Kurulum
+> depoyu çekip imajı kendisi kurar, bir dakika sürer. Aynı yama GB10'da prefix cache'i ve
+> belirlenimli top-k'yi de düzeltiyor. İmaj kurulmazsa katman açılmaz; kurulum bunu söyler.
+>
+> Checkpoint'in `quant_algo` alanı `MIXED_PRECISION`: yalnız MoE uzmanları 4-bit, dikkat ve gömme
+> katmanları BF16/FP8. "NVFP4" adına bakıp 60 GB beklemek yanıltıcı olur.
+>
+> Yamalı imajı istemiyorsan `.env` sonundaki alternatifler stok vLLM ile çalışır:
+> `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` (80 GB, ~20 tok/s) ya da
+> `unsloth/Qwen3.5-122B-A10B-NVFP4` (79 GB).
 
 **Depo kuralı:** yalnızca birinci taraf (NVIDIA, Qwen) ya da büyük kuantizasyoncu (Unsloth). Tek kişilik/deneysel depo kullanılmıyor, çünkü bozuk bir kuantizasyon Spark'ta sessizce anlamsız çıktı üretir ve fark etmesi zordur.
 
@@ -118,7 +138,7 @@ iki tarafta da aynıdır; ayrıntı [aşağıda](#nereden-çalışırsan-çalı�
 ```bash
 bash install.sh --demo --token hf_xxx   # haiku + sonnet            ~50 GB    15-20 dk
 bash install.sh --token hf_xxx          # + opus                    ~73 GB    30-40 dk
-bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~153 GB    60-90 dk
+bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~206 GB   90-120 dk
 ```
 
 **Tam indirme.** Her şeyi isteyen komut `--all`: dört katman, llama-swap, Agent Canvas, A2A
@@ -507,7 +527,7 @@ Spark'ta 128 GB bellek CPU ve GPU arasında paylaşılır. Sığmayan bir model 
 |---|---|---|
 | `demo` | haiku + sonnet | ~50 GB |
 | `daily` | haiku + sonnet + opus | ~73 GB |
-| `fable` | fable | ~80 GB |
+| `fable` | fable | ~133 GB |
 
 `spark status` çıktısında kullanım 120 GB'yi geçmemeli. Geçerse `/srv/ai/compose/.env` içindeki ilgili `*_MEM` değeri 0.05 düşürülüp `spark up daily` çalıştırılır.
 
