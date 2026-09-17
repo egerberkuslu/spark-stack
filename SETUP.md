@@ -5,9 +5,9 @@ DGX Spark'ta sıfırdan çalışan bir kuruluma kadar adım adım.
 
 | Kurulum | Katmanlar | İndirme | Süre |
 |---|---|---|---|
-| `--demo` | haiku + sonnet | ~45 GB | 15-20 dk |
-| varsayılan | + opus | ~65 GB | 30-40 dk |
-| `--all` | + fable, Obsidian, Open WebUI | ~132 GB | 50-70 dk |
+| `--demo` | haiku + sonnet | ~50 GB | 15-20 dk |
+| varsayılan | + opus | ~73 GB | 30-40 dk |
+| `--all` | + fable, Obsidian, Open WebUI | ~153 GB | 60-90 dk |
 
 Süreler indirmeyi ve ilk açılıştaki GPU çekirdeği derlemesini kapsar.
 
@@ -20,10 +20,10 @@ Süreler indirmeyi ve ilk açılıştaki GPU çekirdeği derlemesini kapsar.
 
 | Katman | HuggingFace deposu | Aile | Aktif param. | Kullanım | Bellek | Port |
 |---|---|---|---|---|---|---|
-| `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~25 GB | 8002 |
-| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~20 GB | 8000 |
-| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~20 GB | 8888 |
-| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~67 GB | 8001 |
+| `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~27 GB | 8002 |
+| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~22 GB | 8000 |
+| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~23 GB | 8888 |
+| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~80 GB | 8001 |
 
 Depolar `/srv/ai/compose/.env` içinde `HAIKU_REPO`, `SONNET_REPO`, `OPUS_REPO`, `FABLE_REPO` olarak tanımlıdır; başka bir model denemek için tek yerden değiştirilir.
 

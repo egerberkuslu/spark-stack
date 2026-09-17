@@ -245,7 +245,7 @@ tier_desc(){ case "$1" in
   fable)  echo "NVIDIA ağır · en zor işler · tek başına" ;;
 esac; }
 tier_port(){ case "$1" in haiku) echo 8002;; sonnet) echo 8000;; opus) echo 8888;; fable) echo 8001;; esac; }
-tier_size(){ case "$1" in haiku) echo "~25 GB";; sonnet) echo "~20 GB";; opus) echo "~20 GB";; fable) echo "~67 GB";; esac; }
+tier_size(){ case "$1" in haiku) echo "~27 GB";; sonnet) echo "~22 GB";; opus) echo "~23 GB";; fable) echo "~80 GB";; esac; }
 DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
@@ -335,7 +335,7 @@ $( ((WITH_CANVAS)) && echo "    ${B}canvas${R}   Agent Canvas: ajan kontrol merk
 $( ((WITH_A2A))    && echo "    ${B}a2a${R}      A2A köprüsü: roller protokolle adreslenebilir       :8400" )
 $( ((WITH_NEMOCLAW)) && echo "    ${B}nemoclaw${R} NVIDIA NemoClaw: ajan OpenShell kabında, model kapıdan" )
 
-  ${B}İNDİRME${R}  $( ((DEMO)) && echo "~45 GB" || { ((WITH_FABLE)) && echo "~132 GB" || echo "~65 GB"; } )
+  ${B}İNDİRME${R}  $( ((DEMO)) && echo "~50 GB" || { ((WITH_FABLE)) && echo "~153 GB" || echo "~73 GB"; } )
   ${D}1 Gbit hatta $( ((DEMO)) && echo "15-20 dk" || { ((WITH_FABLE)) && echo "50-70 dk" || echo "30-40 dk"; } ) \
 (indirme + ilk açılışta GPU çekirdeği derleme dahil)${R}
 BANNER
@@ -357,7 +357,7 @@ else
 fi
 is "disk ve ağ"
 FREE=$(df -BG --output=avail "$AI_ROOT" | tail -1 | tr -dc '0-9')
-NEED=$(( WITH_FABLE ? 200 : 100 ))
+NEED=$(( WITH_FABLE ? 230 : 130 ))
 (( WITH_NEMOCLAW )) && NEED=$(( NEED + 10 ))    # OpenShell gateway + kap imajları
 ok "boş disk ${FREE}GB (gereken ~${NEED}GB)"
 (( FREE < NEED )) && die "disk yetersiz"
@@ -871,13 +871,30 @@ hf_indir(){ # <etiket> <repo> <hedef klasör>  → ilerleme satırıyla indirir
   t1=$(( $(date +%s) - t0 )); (( t1 < 1 )) && t1=1
   b=$(du -sb "$d" 2>/dev/null | cut -f1); b=${b:-0}
   INDIRME_OZETI="$(insan_boyut "$b"), ort. $(insan_boyut $(( b / t1 )))/s, $(sure_metni "$t1")"
+  # Klasörde hangi deponun indiği yazılı kalsın: .env'de depo değişince
+  # eskisinin dosyalarıyla karışmasın diye bir sonraki koşu buna bakıyor.
+  (( rc == 0 )) && printf '%s\n' "$repo" > "$d/.spark-repo" 2>/dev/null
   return $rc; }
+
+# Klasörde başka bir depo duruyorsa temizle: .env'de model değiştirdiğinde iki
+# modelin dosyaları aynı klasörde karışır ve vLLM açılmaz. İşaret dosyası yoksa
+# (eski kurulumdan kalma) dokunmuyoruz, boyut kontrolü zaten devrede.
+depo_degistiyse_temizle(){ # <klasör> <repo>
+  local d=$1 repo=$2 eski
+  [[ -f "$d/.spark-repo" ]] || return 0
+  eski="$(cat "$d/.spark-repo" 2>/dev/null)"
+  [[ "$eski" == "$repo" ]] && return 0
+  warn "$d içinde başka bir model var: $eski"
+  log "   yeni depo istendi: $repo, karışmaması için eski dosyalar siliniyor"
+  rm -rf "${d:?}"/* "${d:?}"/.cache "${d:?}"/.spark-repo 2>/dev/null || true
+  ok "eski model temizlendi, yeni depo baştan inecek"; }
 
 # ── Model indirme yardımcısı ────────────────────────────────────────────────
 #  Konteyner içinden indiriyoruz: makineye python/pip kurmuyoruz.
 pull_model(){ # pull_model <katman>
   local t=$1 repo_var="${1^^}_REPO" repo
   repo="${!repo_var}"
+  depo_degistiyse_temizle "$MODELS/$t" "$repo"
   if model_tam_mi "$MODELS/$t" "$repo"; then
     is "$t: zaten indirilmiş"
     ok "$t = $(tier_repo "$t") ($(du -sh "$MODELS/$t"|cut -f1), bütünlük doğrulandı)"; return 0; fi
@@ -894,6 +911,7 @@ pull_model(){ # pull_model <katman>
   # Spekülatif decode taslak modeli varsa (ör. sonnet için DSpark) onu da çek
   local draft_var="${1^^}_DRAFT"
   local draft="${!draft_var:-}"
+  [[ -n "$draft" ]] && depo_degistiyse_temizle "$MODELS/$t-draft" "$draft"
   if [[ -n "$draft" ]] && ! model_tam_mi "$MODELS/$t-draft" "$draft"; then
     if [[ -f "$MODELS/$t-draft/config.json" ]]; then
       is "$t taslak modeli yarım kalmış, kaldığı yerden sürüyor"

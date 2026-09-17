@@ -283,6 +283,14 @@ case "${1:-status}" in
       elif (( s >= 60 )); then printf '%ddk %ds' $((s/60)) $((s%60))
       else printf '%ds' "$s"; fi; }
     HEDEF="$AI_ROOT/models/$M"; mkdir -p "$HEDEF"
+    # Depo değiştiyse eski dosyalar temizlenir: iki modelin dosyaları aynı
+    # klasörde karışırsa vLLM açılmaz.
+    if [[ -f "$HEDEF/.spark-repo" ]] && [[ "$(cat "$HEDEF/.spark-repo")" != "$REPO" ]]; then
+      echo ">> $HEDEF içinde başka bir model var: $(cat "$HEDEF/.spark-repo")"
+      read -rp "   silinip $REPO indirilsin mi? (evet/hayır) " C
+      [[ "$C" == evet ]] || exit 0
+      rm -rf "${HEDEF:?}"/* "${HEDEF:?}"/.cache "${HEDEF:?}"/.spark-repo 2>/dev/null || true
+    fi
     TOPLAM=$(curl -sf --max-time 30 ${HF_TOKEN:+-H "Authorization: Bearer $HF_TOKEN"} \
       "https://huggingface.co/api/models/$REPO/tree/main?recursive=true" 2>/dev/null \
       | jq -r '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add // 0' 2>/dev/null || echo 0)
@@ -308,6 +316,7 @@ case "${1:-status}" in
     if (( RC != 0 )) || [[ ! -f "$HEDEF/config.json" ]]; then
       echo ">> $M indirilemedi (rc=$RC); log: $AI_ROOT/models/.$M.log"; exit 1
     fi
+    printf '%s\n' "$REPO" > "$HEDEF/.spark-repo"
     echo ">> $M indi: $(insan_boyut "$B"), ort. $(insan_boyut $(( B / SURE )))/s, $(sure_metni "$SURE")"
     ;;
 

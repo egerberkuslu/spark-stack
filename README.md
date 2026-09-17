@@ -28,12 +28,12 @@ bütçe, yalıtım seviyeleri, tek makinenin eşzamanlılık tavanı.
 
 | Katman | HuggingFace deposu | Aile | Aktif param. | Kullanım | Bellek | Port |
 |---|---|---|---|---|---|---|
-| `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~25 GB | 8002 |
-| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~20 GB | 8000 |
-| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~20 GB | 8888 |
-| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~67 GB | 8001 |
+| `haiku` | `unsloth/Qwen3.6-35B-A3B-NVFP4` | Qwen | 3B (MoE) | Anlık cevap, commit mesajı, dosya özeti | ~27 GB | 8002 |
+| `sonnet` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` + DSpark | NVIDIA | 3B (MoE) | Günlük iş, ajan döngüleri, **~108 tok/s** | ~22 GB | 8000 |
+| `opus` | `unsloth/Qwen3.8-27B-NVFP4` + MTP | Qwen | 27B (dense) | Ciddi kod, ajan işleri, **varsayılan** | ~23 GB | 8888 |
+| `fable` | `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4` | NVIDIA | 12B (MoE) | En zor işler, **tek başına çalışır** | ~80 GB | 8001 |
 
-İlk üç katman aynı anda açık durur (~65 GB ağırlık + KV cache). `fable` açıldığında diğerleri kapanır.
+İlk üç katman aynı anda açık durur (~72 GB ağırlık + KV cache). `fable` açıldığında diğerleri kapanır.
 
 Claude Code içinde `/model haiku|sonnet|opus` ile geçilir. Kapalı bir katman istenirse LiteLLM isteği çalışan bir katmana yönlendirir, hata dönmez.
 
@@ -116,9 +116,9 @@ iki tarafta da aynıdır; ayrıntı [aşağıda](#nereden-çalışırsan-çalı�
 > değeri `--token` ile ver; vermezsen kurulum sorar ve `hf_` ile başlamayan bir değeri kabul etmez.
 
 ```bash
-bash install.sh --demo --token hf_xxx   # haiku + sonnet            ~45 GB    15-20 dk
-bash install.sh --token hf_xxx          # + opus                    ~65 GB    30-40 dk
-bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    50-70 dk
+bash install.sh --demo --token hf_xxx   # haiku + sonnet            ~50 GB    15-20 dk
+bash install.sh --token hf_xxx          # + opus                    ~73 GB    30-40 dk
+bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~153 GB    60-90 dk
 ```
 
 **Tam indirme.** Her şeyi isteyen komut `--all`: dört katman, llama-swap, Agent Canvas, A2A
@@ -456,15 +456,58 @@ Bu mekanizma sahte arka uçlu bir kapıda uçtan uca doğrulandı: model izni 40
 
 ---
 
+## Model değiştirmek, yeni model eklemek
+
+Katman adları (`haiku`, `sonnet`, `opus`, `fable`) sabittir; arkalarındaki model `.env` içinde bir
+satırdır. Değiştirmek üç adım:
+
+```bash
+sudo nano /srv/ai/compose/.env      # OPUS_REPO=... satırını değiştir
+spark pull opus                     # yeni modeli indir
+spark up daily                      # katmanı yeni modelle aç
+```
+
+`spark pull` klasörde başka bir model bulursa söyler ve onay ister; iki modelin dosyaları aynı
+klasörde karışırsa vLLM açılmaz, o yüzden eskisi silinip yenisi baştan iner. Katman adı
+değişmediği için Claude Code, Canvas, A2A ve ekip anahtarları bundan etkilenmez.
+
+Bellek payını da modele göre ayarlaman gerekir. `<KATMAN>_MEM` 128 GB'nin oranıdır ve aynı anda
+açık duran katmanların toplamı 0,75'i geçmemelidir:
+
+```
+OPUS_REPO=RedHatAI/Qwen3-Coder-Next-NVFP4
+OPUS_MEM=0.38          # ~48 GB ağırlık + KV cache
+OPUS_CTX=131072
+```
+
+Depo seçerken iki kuralımız var. Birincisi kaynak: yalnız birinci taraf (`nvidia`, `Qwen`) ya da
+büyük kuantizasyoncu (`unsloth`, `RedHatAI`); tek kişilik deneysel depo kullanmıyoruz, çünkü bozuk
+bir kuantizasyon Spark'ta sessizce anlamsız çıktı üretir ve fark etmesi zordur. İkincisi biçim:
+**NVFP4** olmalı, çünkü GB10'da hız ve bellek buna bağlı.
+
+Bir deponun gerçekten kaç GB olduğunu indirmeden öğrenmek için:
+
+```bash
+curl -s "https://huggingface.co/api/models/<depo>/tree/main?recursive=true" \
+  | jq '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add / 1e9'
+```
+
+`.env` dosyasının sonunda denenmiş alternatifler listeli. Beşinci bir katman eklemek istersen iş
+büyür: `docker-compose.yml` içine servis, llama-swap ayarına üye ve kapı yapılandırmasına model
+girdisi gerekir. Dört katman tek makinenin belleğine göre seçildi, beşincisi ancak bir katmanın
+yerine geçerse mantıklı.
+
+---
+
 ## Bellek yönetimi
 
 Spark'ta 128 GB bellek CPU ve GPU arasında paylaşılır. Sığmayan bir model makineyi kilitler; yavaşlatmaz, kilitler.
 
 | Profil | Açık katmanlar | Yaklaşık |
 |---|---|---|
-| `demo` | haiku + sonnet | ~45 GB |
-| `daily` | haiku + sonnet + opus | ~65 GB |
-| `fable` | fable | ~67 GB |
+| `demo` | haiku + sonnet | ~50 GB |
+| `daily` | haiku + sonnet + opus | ~73 GB |
+| `fable` | fable | ~80 GB |
 
 `spark status` çıktısında kullanım 120 GB'yi geçmemeli. Geçerse `/srv/ai/compose/.env` içindeki ilgili `*_MEM` değeri 0.05 düşürülüp `spark up daily` çalıştırılır.
 
