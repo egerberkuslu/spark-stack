@@ -281,8 +281,14 @@ services:
     shm_size: 16g
     volumes:
       - ${AI_ROOT:-/srv/ai}/models:/models
+      # Ağırlıklar HF önbellek düzeninde: reçetenin hazırlık betiği refs/ ve
+      # blobs/ yapısına bağlı, bu yüzden fable diğer katmanlardan ayrı duruyor.
+      - ${AI_ROOT:-/srv/ai}/models/hf-cache:/hf
       - ${AI_ROOT:-/srv/ai}/data/cache-fable:/root/.cache/vllm
     environment:
+      # Hazırlanmış (fp8 yan katmanlı) düzen kullanılıyorsa açılır
+      VLLM_FP8_HYBRID: "${FABLE_FP8_HYBRID:-0}"
+      VLLM_USE_DEEP_GEMM: "0"
       # PLE tablosu diskten okunur: bunlar olmadan model belleğe sığmaz
       VLLM_PLE_MMAP: "1"
       VLLM_PLE_MMAP_WORKERS: "${FABLE_PLE_WORKERS:-32}"
@@ -295,7 +301,7 @@ services:
       VLLM_USE_FLASHINFER_SAMPLER: "1"
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
     command: >
-      vllm serve /models/fable --served-model-name fable
+      vllm serve ${FABLE_SNAPSHOT:-/models/fable} --served-model-name fable
       --host 0.0.0.0 --port 8000
       --load-format safetensors
       --max-model-len ${FABLE_CTX:-262144}

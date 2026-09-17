@@ -38,6 +38,7 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 AI_ROOT="${AI_ROOT:-/srv/ai}"
 MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
+FDIR="$AI_ROOT/qwen38-flash-dgx"   # Flash-Next reçetesi: yamalı imaj ve hazırlık betiği
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
 WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0; WITH_CANVAS=0; WITH_A2A=0
@@ -786,7 +787,6 @@ if (( WITH_FABLE )) && [[ "${FABLE_REPO:-}" == *Flash-Next* ]]; then
   # yok. Resmî önizleme imajının üstüne yamayı ekleyen yapıyı burada kuruyoruz;
   # onsuz katman belleğe sığmaz. Yapı imajı çekip yamaları uygular, ~1 dk sürer.
   is "fable imajı: vLLM + PLE yaması"
-  FDIR="$AI_ROOT/qwen38-flash-dgx"
   FIMG="${FABLE_IMAGE:-qwen38-flash-dgx:latest}"
   if dk image inspect "$FIMG" >/dev/null 2>&1; then
     ok "fable imajı zaten kurulu: $FIMG"
@@ -868,18 +868,22 @@ bellek_uyar(){ # <katman> <repo>
 #   2) yarım kalan parça var mı (hf tamamlanmamış dosyayı .incomplete tutar)
 #   3) yereldeki toplam boyut depodaki toplamın en az %97'si mi
 # Üçüncüsü API'ye bağlı; API susarsa ilk ikisiyle yetiniyoruz.
-model_tam_mi(){ # <klasör> <repo> → 0 tam, 1 eksik
-  local d=$1 repo=$2 T b
+#
+# İki düzeni de destekliyor. Düz klasörde dosyalar gerçek; HF önbellek düzeninde
+# anlık görüntüdeki her dosya blobs/ içine sembolik bağ ve yarım parçalar orada
+# durur. Bu yüzden boyut -L ile (bağları izleyerek) ölçülüyor ve .incomplete
+# taraması üçüncü argümanla verilen köke kadar genişletilebiliyor.
+model_tam_mi(){ # <klasör> <repo> [tarama kökü] → 0 tam, 1 eksik
+  local d=$1 repo=$2 kok="${3:-$1}" T b
   [[ -f "$d/config.json" ]] || return 1
-  find "$d/.cache/huggingface/download" -name '*.incomplete' -type f -print -quit 2>/dev/null \
-    | grep -q . && return 1
+  find "$kok" -name '*.incomplete' -type f -print -quit 2>/dev/null | grep -q . && return 1
   # Ağırlık dosyası hiç yoksa kesin eksik: config.json ilk inenlerden biri ve
   # API susmuş olsa bile bu işaret o durumu yakalıyor.
-  find "$d" -maxdepth 2 \( -name '*.safetensors' -o -name '*.bin' -o -name '*.gguf' \
+  find -L "$d" -maxdepth 2 \( -name '*.safetensors' -o -name '*.bin' -o -name '*.gguf' \
     -o -name '*.pt' -o -name '*.pth' \) -type f -print -quit 2>/dev/null | grep -q . || return 1
   T="$(hf_toplam_bayt "$repo")"
   (( T > 0 )) || return 0
-  b="$(du -sb "$d" 2>/dev/null | cut -f1)"; b="${b:-0}"
+  b="$(du -sbL "$d" 2>/dev/null | cut -f1)"; b="${b:-0}"
   (( b * 100 >= T * 97 )); }
 klasor_izle(){ # <etiket> <klasör> <toplam bayt>  (arka planda çalışır, öndeki iş bitince öldürülür)
   set +e; trap - ERR
@@ -928,6 +932,46 @@ hf_indir(){ # <etiket> <repo> <hedef klasör>  → ilerleme satırıyla indirir
   (( rc == 0 )) && printf '%s\n' "$repo" > "$d/.spark-repo" 2>/dev/null
   return $rc; }
 
+hf_indir_onbellek(){ # <etiket> <repo> <hf önbellek kökü>  → HF önbellek düzenine indirir
+  # Flash-Next reçetesi ağırlıkları HuggingFace önbellek düzeninde bekliyor:
+  # hub/models--<depo>/snapshots/<sürüm>/ ve blobs/. prepare-hybrid.sh o düzenin
+  # refs/ ve blobs/ yapısına doğrudan bağlı, düz klasörle çalışmıyor. Bu yüzden
+  # fable'ı reçetenin düzeninde tutuyoruz; diğer katmanlar düz klasörde kalıyor.
+  local l=$1 repo=$2 kok=$3 T t0 t1 b wpid rc kap
+  T=$(hf_toplam_bayt "$repo"); mkdir -p "$kok"
+  t0=$(date +%s)
+  kap="sk-indir-${l//[^a-zA-Z0-9_.-]/-}"
+  dk rm -f "$kap" >/dev/null 2>&1 || true
+  klasor_izle "$l" "$kok" "$T" & wpid=$!
+  ARKA_PID=$wpid; INDIR_KAP=$kap
+  dk run --rm --name "$kap" -e HF_TOKEN="$HF_TOKEN" -e HF_HUB_ENABLE_HF_TRANSFER=1 \
+    -e HF_HOME=/hf -v "$kok":/hf --entrypoint bash "$VLLM_IMAGE" \
+    -c "hf download '$repo' --max-workers ${HF_WORKERS:-16}" >>"$LOGFILE" 2>&1 &
+  ISLEM_PID=$!
+  wait "$ISLEM_PID"; rc=$?
+  ISLEM_PID=""; INDIR_KAP=""
+  kill "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null; ARKA_PID=""; printf '\r\033[K'
+  t1=$(( $(date +%s) - t0 )); (( t1 < 1 )) && t1=1
+  b=$(du -sb "$kok" 2>/dev/null | cut -f1); b=${b:-0}
+  INDIRME_OZETI="$(insan_boyut "$b"), ort. $(insan_boyut $(( b / t1 )))/s, $(sure_metni "$t1")"
+  return $rc; }
+
+anlik_goruntu(){ # <hf kök> <repo> → anlık görüntü dizini (host yolu)
+  local kok=$1 repo=$2 rd rev p yeni=""
+  rd="$kok/hub/models--${repo//\//--}"
+  # Önce refs: reçetenin serve.sh'i de aynı sırayla çözüyor, ikisi aynı
+  # anlık görüntüde buluşmalı.
+  for ref in main master; do
+    rev="$(cat "$rd/refs/$ref" 2>/dev/null || true)"
+    [[ -n "$rev" && -d "$rd/snapshots/$rev" ]] && { echo "$rd/snapshots/$rev"; return 0; }
+  done
+  # refs yoksa en yeni görüntü; hazırlanmış (-fp8hybrid) kopya aday değil
+  for p in "$rd"/snapshots/*/; do
+    [[ -d "$p" && "$p" != *-fp8hybrid/ ]] || continue
+    [[ -z "$yeni" || "$p" -nt "$yeni" ]] && yeni="$p"
+  done
+  [[ -n "$yeni" ]] && echo "${yeni%/}"; }
+
 # Klasörde başka bir depo duruyorsa temizle: .env'de model değiştirdiğinde iki
 # modelin dosyaları aynı klasörde karışır ve vLLM açılmaz. İşaret dosyası yoksa
 # (eski kurulumdan kalma) dokunmuyoruz, boyut kontrolü zaten devrede.
@@ -941,11 +985,71 @@ depo_degistiyse_temizle(){ # <klasör> <repo>
   rm -rf "${d:?}"/* "${d:?}"/.cache "${d:?}"/.spark-repo 2>/dev/null || true
   ok "eski model temizlendi, yeni depo baştan inecek"; }
 
+# ── fable · Flash-Next reçetesi ─────────────────────────────────────────────
+#  Ağırlıklar HF önbellek düzeninde iner, çünkü reçetenin hazırlık betiği o
+#  düzenin refs/ ve blobs/ yapısına bağlı. Anlık görüntü yolu .env'e yazılır,
+#  compose oradan okur. Her adım tekrar çalıştırılabilir: inen tekrar inmez,
+#  hazırlanmış düzen tekrar hazırlanmaz, yani --resume aynı komuttur.
+fable_flashnext(){
+  local repo="$FABLE_REPO" kok="$MODELS/hf-cache" snap
+  bellek_uyar fable "$repo"
+  snap="$(anlik_goruntu "$kok" "$repo")"
+  if [[ -n "$snap" ]] && model_tam_mi "$snap" "$repo" "$kok"; then
+    is "fable: zaten indirilmiş"
+    ok "fable = $repo ($(du -sh "$kok" 2>/dev/null|cut -f1), bütünlük doğrulandı)"
+  else
+    if [[ -n "$snap" ]]; then
+      is "fable: yarım kalmış ($(du -sh "$kok" 2>/dev/null|cut -f1) indi), kaldığı yerden sürüyor"
+    else
+      is "fable ← $repo  ($(tier_size fable))"
+    fi
+    hf_indir_onbellek fable "$repo" "$kok" || true
+    snap="$(anlik_goruntu "$kok" "$repo")"
+    [[ -n "$snap" ]] && model_tam_mi "$snap" "$repo" "$kok" \
+      || die "fable eksik indi ($repo); tekrar denemek için: bash install.sh --resume"
+    ok "fable indi: $INDIRME_OZETI"
+  fi
+
+  # İsteğe bağlı hazırlık: yan katmanlar bf16'dan blok-fp8'e, +%20 çözme hızı,
+  # +%8 KV havuzu. Bir kerelik ~10 dk ve ~13 GB. Hazırsa tekrar çalıştırılmaz.
+  local snap_ad hib_host
+  snap_ad="$(basename "$snap")"
+  hib_host="$(dirname "$snap")/${snap_ad}-fp8hybrid"
+  if [[ "${FABLE_HYBRID:-1}" == 1 ]]; then
+    is "fable hazırlığı: yan katmanlar fp8'e (+%20 çözme)"
+    if [[ -f "$hib_host/config.json" ]]; then
+      ok "hazırlanmış düzen zaten var: ${snap_ad}-fp8hybrid"
+    elif [[ -x "$FDIR/scripts/prepare-hybrid.sh" ]]; then
+      if stream "fable-hibrit" env MODEL="$repo" IMAGE="${FABLE_IMAGE:-qwen38-flash-dgx:latest}" \
+           HF_CACHE="$kok" bash "$FDIR/scripts/prepare-hybrid.sh"; then
+        ok "hazırlık bitti: ${snap_ad}-fp8hybrid"
+      else
+        warn "hazırlık yapılamadı; fable yayınlandığı düzenle çalışır (~%20 daha yavaş)"
+      fi
+    else
+      warn "prepare-hybrid.sh bulunamadı: $FDIR"
+    fi
+  else
+    log "fable hazırlığı atlandı (FABLE_HYBRID=0); yayınlanan düzen kullanılacak"
+  fi
+
+  # Compose'un kaptan göreceği yol. Hazırlanmış düzen varsa onu kullanıyoruz.
+  is "fable yolu compose'a yazılıyor"
+  local ic="/hf/hub/models--${repo//\//--}/snapshots/$snap_ad"
+  local hib=0
+  [[ -f "$hib_host/config.json" ]] && { ic="${ic}-fp8hybrid"; hib=1; }
+  sed -i '/^FABLE_SNAPSHOT=/d;/^FABLE_FP8_HYBRID=/d' "$ENVF"
+  { echo "FABLE_SNAPSHOT=$ic"; echo "FABLE_FP8_HYBRID=$hib"; } >> "$ENVF"
+  export FABLE_SNAPSHOT="$ic" FABLE_FP8_HYBRID="$hib"
+  ok "fable yolu: $ic  ·  hazırlanmış düzen: $( ((hib)) && echo evet || echo hayır )"
+}
+
 # ── Model indirme yardımcısı ────────────────────────────────────────────────
 #  Konteyner içinden indiriyoruz: makineye python/pip kurmuyoruz.
 pull_model(){ # pull_model <katman>
   local t=$1 repo_var="${1^^}_REPO" repo
   repo="${!repo_var}"
+  if [[ "$t" == fable && "$repo" == *Flash-Next* ]]; then fable_flashnext; return 0; fi
   depo_degistiyse_temizle "$MODELS/$t" "$repo"
   bellek_uyar "$t" "$repo"
   if model_tam_mi "$MODELS/$t" "$repo"; then
@@ -982,9 +1086,11 @@ pull_model(){ # pull_model <katman>
 #  Sıra önemli: küçükten büyüğe. Böylece ilk model erken hazır olur ve
 #  büyükler inerken bile makine test edilebilir durumda olur.
 ALL_TIERS=("${TIERS[@]}"); ((WITH_FABLE)) && ALL_TIERS+=(fable)
-# İş sayısı: her katman bir iş, spekülatif decode taslağı olan katman iki
+# İş sayısı: her katman bir iş, spekülatif decode taslağı olan katman iki.
+# Flash-Next üç iş yapar: indirme, hazırlık, compose yolunu yazma.
 MODEL_IS=${#ALL_TIERS[@]}
 for t in "${ALL_TIERS[@]}"; do dv="${t^^}_DRAFT"; [[ -n "${!dv:-}" ]] && MODEL_IS=$((MODEL_IS+1)); done
+(( WITH_FABLE )) && [[ "${FABLE_REPO:-}" == *Flash-Next* ]] && MODEL_IS=$((MODEL_IS+2))
 sbegin 4 "$MODEL_IS"
 printf '  %s│%s\n' "$D" "$R"
 printf '  %s│  %-7s %-42s %-8s %s%s\n' "$D" "KATMAN" "MODEL" "BOYUT" "KULLANIM" "$R"

@@ -276,6 +276,13 @@ case "${1:-status}" in
       fable)  REPO="$FABLE_REPO"  ;;
       *) echo "bilinmeyen katman: $M  (haiku|sonnet|opus|fable)"; exit 1 ;;
     esac
+    # Flash-Next ağırlıkları HF önbellek düzeninde durur ve yanında bir hazırlık
+    # adımı ister; onu buradaki düz indirme değil kurulum yürütüyor.
+    if [[ "$M" == fable && "$REPO" == *Flash-Next* ]]; then
+      echo ">> fable Flash-Next düzeninde: indirme ve hazırlık kurulum tarafında"
+      echo "   bash install.sh --with-fable --resume"
+      exit 0
+    fi
     # İlerleme: toplam boyut HF API'sinden, ölçüm klasörden (install.sh ile aynı yöntem)
     insan_boyut(){ awk -v b="${1:-0}" 'BEGIN{ if (b>=1e9) printf "%.1f GB", b/1e9; else printf "%.0f MB", b/1e6 }'; }
     sure_metni(){ local s=${1:-0}
