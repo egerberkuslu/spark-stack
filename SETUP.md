@@ -72,7 +72,7 @@ Script 13 adımda ilerler:
 Model adımında hangi katmanın hangi modeli indirdiği açıkça listelenir:
 
 ```
-┌─ [5/13] Model ağırlıkları
+┌─ [5/13] Model ağırlıkları · 5 iş
   │
   │  KATMAN  MODEL                                  BOYUT   KULLANIM
   │  ──────  ─────                                  ─────   ────────
@@ -80,13 +80,22 @@ Model adımında hangi katmanın hangi modeli indirdiği açıkça listelenir:
   │  sonnet  nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4 ~20 GB  hızlı NVIDIA · ~108 tok/s
   │  opus    unsloth/Qwen3.8-27B-NVFP4                        ~20 GB  Qwen kalite · ciddi kod
   │
+  │ ▸ [1/5] haiku ← unsloth/Qwen3.6-35B-A3B-NVFP4  (~25 GB)
   │ ⏳ haiku     % 42  11.2 GB / 26.5 GB  38 MB/s  kalan 6dk 40s  (4dk 55s)
   │ ✓ haiku indi: 26.5 GB, ort. 41 MB/s, 10dk 48s
+  │ ▸ [2/5] sonnet ← nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4  (~20 GB)
   │ ✓ sonnet indi: 21.6 GB, ort. 40 MB/s, 9dk 2s
+  │ ▸ [3/5] sonnet taslak modeli ← nvidia/DSpark-Nemotron-Draft  (~1 GB)
   │ ✓ sonnet taslak indi: 1.2 GB, ort. 35 MB/s, 34s, spekülatif decode aktif
-  │ opus ← unsloth/Qwen3.8-27B-NVFP4  (~20 GB)
-└─ [████████████████············]  58%  1840s · toplam 34:12 · kalan 8 adım
+  │ ▸ [4/5] opus ← unsloth/Qwen3.8-27B-NVFP4  (~20 GB)
+└─ [████████████████············]  58%  5/5 iş · 1840s · toplam 34:12 · kalan 8 adım
 ```
+
+Her adımın başlığı o adımda kaç iş olduğunu yazar; sayı kurulum seçeneklerine göre
+hesaplanır, yani `--all` ile daha uzun bir liste görürsün. Her iş başlamadan önce
+`▸ [3/5]` biçiminde numaralanır, adım kapanışında kaçının bittiği tekrarlanır. Böylece
+uzun bir adımın ortasında nerede olduğun belli olur. `--all` ile toplam 57 iş, varsayılan
+kurulumda 38 iş çalışır.
 
 Tüm ayrıntı `/srv/ai/install.log` dosyasına yazılır.
 

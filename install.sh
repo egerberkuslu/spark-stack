@@ -72,12 +72,23 @@ die(){ _w "[$(date +%T)] HATA: $*"
     "$RED" "$R" "$*" "$LOGFILE" "$B" "$R"; exit 1; }
 trap 'die "beklenmedik hata: satır $LINENO"' ERR
 
-sbegin(){ CUR=$1; STEP_START=$(date +%s)
-  printf '\n%s┌─ [%d/%d] %s%s%s\n' "$BLU" $((CUR+1)) ${#STEP_KEYS[@]} "$B" "${STEP_NAME[$CUR]}" "$R"
-  _w ""; _w "=== [$((CUR+1))/${#STEP_KEYS[@]}] ${STEP_NAME[$CUR]} ==="; }
+# Adım içi iş sayacı: sbegin'in ikinci argümanı o adımda kaç iş olduğunu söyler
+# (bayraklara göre hesaplanır), her iş başlamadan önce is "başlık" çağrılır.
+# Sayaç bildirilenden fazla iş görürse toplamı büyütür, yani yanlış bir sayı
+# yüzünden çıktı bozulmaz.
+IS_TOPLAM=0; IS_SAYAC=0
+sbegin(){ CUR=$1; IS_TOPLAM=${2:-0}; IS_SAYAC=0; STEP_START=$(date +%s)
+  local ek=""; (( IS_TOPLAM )) && ek="$D · $IS_TOPLAM iş$R"
+  printf '\n%s┌─ [%d/%d] %s%s%s%s\n' "$BLU" $((CUR+1)) ${#STEP_KEYS[@]} "$B" "${STEP_NAME[$CUR]}" "$R" "$ek"
+  _w ""; _w "=== [$((CUR+1))/${#STEP_KEYS[@]}] ${STEP_NAME[$CUR]} (${IS_TOPLAM} iş) ==="; }
+is(){ IS_SAYAC=$((IS_SAYAC+1)); (( IS_SAYAC > IS_TOPLAM )) && IS_TOPLAM=$IS_SAYAC
+  printf '  %s│%s %s▸ [%d/%d]%s %s\n' "$D" "$R" "$B" "$IS_SAYAC" "$IS_TOPLAM" "$R" "$1"
+  _w "-- iş [$IS_SAYAC/$IS_TOPLAM] $1"; }
 send(){ DONE_WEIGHT=$((DONE_WEIGHT+${STEP_WEIGHT[$CUR]})); echo "${STEP_KEYS[$CUR]}" >>"$STATE"
-  printf '%s└─%s %s  %s%ss · toplam %s · kalan %d adım%s\n' "$BLU" "$R" "$(bar "$(pctnow)")" \
-    "$D" $(( $(date +%s)-STEP_START )) "$(elapsed)" $(( ${#STEP_KEYS[@]}-CUR-1 )) "$R"; }
+  local isk=""; (( IS_TOPLAM )) && isk="$IS_SAYAC/$IS_TOPLAM iş · "
+  printf '%s└─%s %s  %s%s%ss · toplam %s · kalan %d adım%s\n' "$BLU" "$R" "$(bar "$(pctnow)")" \
+    "$D" "$isk" $(( $(date +%s)-STEP_START )) "$(elapsed)" $(( ${#STEP_KEYS[@]}-CUR-1 )) "$R"
+  IS_TOPLAM=0; IS_SAYAC=0; }
 # Not: --resume adım ATLAMAZ. Her adım kendi içinde yeniden çalıştırılabilir
 # (indirilmiş ağırlık tekrar inmez, kurulu paket atlanır, var olan kural dosyası
 # korunur) ve sonraki adımlar önceki adımların değişkenlerine bağlı olduğu için
@@ -242,13 +253,15 @@ touch "$LOGFILE"; [[ $RESUME == 1 ]] || : >"$STATE"
 _w "════ spark-stack $VERSION · $(date) ════"
 
 # ── 0 ÖN KONTROL ────────────────────────────────────────────────────────────
-sbegin 0
+sbegin 0 4
+is "donanım: mimari ve GPU"
 [[ "$(uname -m)" == aarch64 ]] && ok "mimari aarch64" || warn "mimari $(uname -m): Spark imajları uymayabilir"
 if have nvidia-smi && nvidia-smi -L >/dev/null 2>&1; then
   ok "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
 else
   warn "NVIDIA sürücüsü görünmüyor: sonraki adımda kurulacak"
 fi
+is "disk ve ağ"
 FREE=$(df -BG --output=avail "$AI_ROOT" | tail -1 | tr -dc '0-9')
 NEED=$(( WITH_FABLE ? 200 : 100 ))
 (( WITH_NEMOCLAW )) && NEED=$(( NEED + 10 ))    # OpenShell gateway + kap imajları
@@ -258,6 +271,7 @@ curl -sf https://huggingface.co >/dev/null || die "internet yok"
 
 # Port çakışması: kurulumun ortasında anlaşılmaz bir hatayla düşmek yerine
 # burada söyleyelim. Yalnız kuracağımız parçaların portlarına bakıyoruz.
+is "port çakışması"
 port_busy(){ (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && { exec 3<&-; return 0; } || return 1; }
 PORT_LIST=("4000:kapı" "8000:sonnet" "8002:haiku")
 [[ " ${TIERS[*]} " == *" opus "* ]] && PORT_LIST+=("8888:opus")
@@ -279,6 +293,7 @@ else
   ok "gereken portlar boş (${#PORT_LIST[@]} port kontrol edildi)"
 fi
 
+is "HuggingFace anahtarı"
 TOKSRC=""
 [[ -n "${HF_TOKEN:-}" ]] && TOKSRC="komut satırı/ortam"
 # shellcheck source=/dev/null
@@ -315,10 +330,10 @@ send
 #  Makinede hiçbir şey olmadığı varsayımıyla çalışır:
 #  temel paketler → NVIDIA sürücüsü → Docker Engine → NVIDIA Container Toolkit.
 #  Zaten kurulu olanlar atlanır (DGX OS çoğunu hazır getirir).
-sbegin 1
-
+sbegin 1 6
 
 # 1.1 temel araçlar
+is "temel araçlar (curl, jq, git, gnupg)"
 MISSING=()
 for p in curl ca-certificates gnupg jq git; do have "$p" || MISSING+=("$p"); done
 # ca-certificates komut değil, dosya kontrolü
@@ -329,6 +344,7 @@ fi
 ok "temel araçlar hazır (curl, jq, git, gnupg)"
 
 # 1.2 NVIDIA sürücüsü
+is "NVIDIA sürücüsü"
 if have nvidia-smi && nvidia-smi -L >/dev/null 2>&1; then
   ok "NVIDIA sürücüsü: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)"
 else
@@ -347,6 +363,7 @@ else
 fi
 
 # 1.3 Docker Engine
+is "Docker Engine + compose v2"
 if have docker && docker compose version >/dev/null 2>&1; then
   ok "docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1) + compose v2 zaten kurulu"
 else
@@ -365,12 +382,14 @@ else
 fi
 
 # 1.4 kullanıcıyı docker grubuna ekle (bu oturumda etkili olmazsa sudo ile devam ederiz)
+is "docker erişimi"
 groups "$USER" | grep -qw docker || { sudo usermod -aG docker "$USER"; warn "docker grubuna eklendin: bu kurulum sudo ile devam edecek"; }
 detect_docker
 [[ -n "$DKR" ]] || die "docker çalışmıyor: 'sudo systemctl status docker' ile bak"
 [[ "$DKR" == "sudo docker" ]] && log "not: bu oturumda 'sudo docker' kullanılıyor; yeni terminalde sudo'suz çalışacak"
 
 # 1.5 NVIDIA Container Toolkit: konteynerlerin GPU'yu görmesi için
+is "NVIDIA Container Toolkit"
 if dk info 2>/dev/null | grep -qi nvidia; then
   ok "NVIDIA Container Toolkit zaten yapılandırılmış"
 else
@@ -391,6 +410,7 @@ else
 fi
 
 # 1.6 gerçek test
+is "konteynerden GPU testi"
 spin "konteynerden GPU testi" dk run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu24.04 nvidia-smi -L \
   || die "konteyner GPU'yu göremiyor: 'sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker' deneyip --resume"
 ok "konteynerler GPU'yu görüyor"
@@ -400,7 +420,8 @@ ok "swap kapatıldı (birleşik bellekte kilitlenmeyi gizler)"
 send
 
 # ── 2 DOSYA DÜZENİ ──────────────────────────────────────────────────────────
-sbegin 2
+sbegin 2 $(( 6 + WITH_AGENCY ))
+is "dizinler, compose ve .env"
 mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,webui,qdrant,canvas} \
          "$CDIR" "$AI_ROOT/bin"
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
@@ -445,6 +466,7 @@ set +a
 #  Canvas kabındaki ajan da aynı anda yeni kurala bağlanmış olur.
 KURALLAR="$VAULT_PATH/kurallar"
 if [[ -d "$SRC_DIR/roller" ]]; then
+  is "şirket kuralları ve denetim ayarı"
   mkdir -p "$KURALLAR"
   YENI=0
   for f in "$SRC_DIR/roller/kurallar/"*.md; do
@@ -458,6 +480,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   mkdir -p "$KURALLAR/denetim"
   [[ -f "$KURALLAR/denetim/ruff.toml" ]] || cp "$SRC_DIR/roller/kurallar/denetim/ruff.toml" "$KURALLAR/denetim/"
 
+  is "roller ve kural skill'i (host + Canvas)"
   # Skill: kuralların yerini söyler, metnini taşımaz
   mkdir -p "$HOME/.claude/skills/sirket-kurallari"
   sed -e "s|__KURALLAR__|$KURALLAR|g" -e "s|__VAULT__|$VAULT_PATH|g" "$SRC_DIR/roller/SKILL.md" \
@@ -493,6 +516,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   #  Git kancaları (pre-commit, commit-msg, pre-push) ve PR kapısı. Makinedeki
   #  her depo core.hooksPath ile kapıdan geçer; Canvas kabı aynı dizini
   #  /opt/spark-denetim olarak görür, ruff ve shellcheck ikilileri oradadır.
+  is "kural kapısı: git kancaları ve araçlar"
   if bash "$SRC_DIR/roller/denetim/kur.sh" "$AI_ROOT" "$SRC_DIR/roller/denetim" >>"$LOGFILE" 2>&1; then
     ok "kural kapısı kuruldu, git kancaları: $AI_ROOT/denetim/hooks (core.hooksPath)"
     log "   PR kapısı: spark kural pr · projeye CI: spark kural kur <proje>"
@@ -506,6 +530,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   sed -e "s|__KURALLAR__|/vault/kurallar|g" -e "s|__VAULT__|/vault|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
   ok "kural skill'i Canvas tarafına da yazıldı"
 
+  is "ortak skill dizini ve proje sözleşmesi"
   # Ortak skill dizini: Canvas kabı bunu ~/.agents/skills olarak görür.
   # Burada ilk kez derleniyor (kurallar + host skill'leri). claude-obsidian
   # 10. adımda indiği için orada bir kez daha derlenip 15 skill'i de girecek.
@@ -530,6 +555,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   #  katman adını ekler, gövdeye şirket kurallarını bağlar. "ajans-" öneki
   #  kendi rollerimizle karışmasını önler.
   if (( WITH_AGENCY )); then
+    is "katalogtan uzman roller"
     # Kataloğun kendisini kuruyoruz, tek tek dosya çekmiyoruz: resmî kurucusu
     # (scripts/install.sh) listeleme, etkileşimli seçici ve 16 araç hedefi
     # getiriyor. Masaüstü uygulamasına gerek yok, çünkü onun Claude Code biçimi
@@ -567,12 +593,13 @@ else
   warn "roller/ klasörü bulunamadı: kurallar ve roller kurulmadı"
 fi
 
+is "spark komutu"
 sudo install -m0755 "$SRC_DIR/spark" /usr/local/bin/spark
 ok "$CDIR hazır · kurallar, roller ve 'spark' komutu kuruldu"
 send
 
 # ── 3 İMAJLAR ───────────────────────────────────────────────────────────────
-sbegin 3
+sbegin 3 $(( 3 + WITH_SWAP * 2 + WITH_CANVAS + WITH_EXTRAS * 2 ))
 # Docker API akışını katman bazında toplayıp tek satır ilerleme basan yardımcı
 mkdir -p "$AI_ROOT/bin"
 cat > "$AI_ROOT/bin/imaj-ilerleme.py" <<'PYEOF'
@@ -619,6 +646,7 @@ print(f"{fmt(T)} indi, {time.time()-t0:.0f}s" if T else "zaten güncel")
 PYEOF
 pull_image(){ # <imaj[:etiket]> → Docker API ile çeker, ilerlemeyi basar
   local img=$1 name tag rc son tmp
+  is "imaj: ${img##*/}"
   if [[ "${img##*/}" == *:* ]]; then name="${img%:*}"; tag="${img##*:}"; else name="$img"; tag="latest"; fi
   local -a sock=(curl -sN --unix-socket /var/run/docker.sock)
   [[ "$DKR" == sudo* ]] && sock=(sudo curl -sN --unix-socket /var/run/docker.sock)
@@ -641,8 +669,10 @@ if (( WITH_SWAP )); then
   # llama-swap'in Docker API istemcisi yok, komutu düz exec ediyor. Konteynerleri
   # başlatabilmesi için statik docker CLI ikilisi imajın içine bağlanır.
   if [[ -x "$AI_ROOT/bin/docker" ]]; then
+    is "statik docker CLI"
     ok "docker CLI hazır ($("$AI_ROOT/bin/docker" --version 2>/dev/null | head -1 || echo '?'))"
   else
+    is "statik docker CLI"
     DCLI_VER="${DOCKER_CLI_VERSION:-28.5.1}"; DCLI_ARCH="$(uname -m)"
     spin "statik docker CLI ($DCLI_VER · $DCLI_ARCH)" bash -c \
       "curl -fsSL 'https://download.docker.com/linux/static/stable/$DCLI_ARCH/docker-$DCLI_VER.tgz' \
@@ -720,8 +750,9 @@ pull_model(){ # pull_model <katman>
   local t=$1 repo_var="${1^^}_REPO" repo
   repo="${!repo_var}"
   if [[ -f "$MODELS/$t/config.json" ]]; then
-    ok "$t = $(tier_repo "$t"): zaten indirilmiş ($(du -sh "$MODELS/$t"|cut -f1))"; return 0; fi
-  log "$t ← $repo  ($(tier_size "$t"))"
+    is "$t: zaten indirilmiş"
+    ok "$t = $(tier_repo "$t") ($(du -sh "$MODELS/$t"|cut -f1))"; return 0; fi
+  is "$t ← $repo  ($(tier_size "$t"))"
   hf_indir "$t" "$repo" "$MODELS/$t" || true
   [[ -f "$MODELS/$t/config.json" ]] || die "$t indirilemedi ($repo)"
   ok "$t indi: $INDIRME_OZETI"
@@ -730,7 +761,7 @@ pull_model(){ # pull_model <katman>
   local draft_var="${1^^}_DRAFT"
   local draft="${!draft_var:-}"
   if [[ -n "$draft" && ! -f "$MODELS/$t-draft/config.json" ]]; then
-    log "$t taslak modeli ← $draft  (~1 GB)"
+    is "$t taslak modeli ← $draft  (~1 GB)"
     hf_indir "$t-taslak" "$draft" "$MODELS/$t-draft" || true
     [[ -f "$MODELS/$t-draft/config.json" ]] || die "$t taslak modeli indirilemedi ($draft)"
     ok "$t taslak indi: $INDIRME_OZETI, spekülatif decode aktif"
@@ -740,8 +771,11 @@ pull_model(){ # pull_model <katman>
 # ── 4 MODEL AĞIRLIKLARI ─────────────────────────────────────────────────────
 #  Sıra önemli: küçükten büyüğe. Böylece ilk model erken hazır olur ve
 #  büyükler inerken bile makine test edilebilir durumda olur.
-sbegin 4
 ALL_TIERS=("${TIERS[@]}"); ((WITH_FABLE)) && ALL_TIERS+=(fable)
+# İş sayısı: her katman bir iş, spekülatif decode taslağı olan katman iki
+MODEL_IS=${#ALL_TIERS[@]}
+for t in "${ALL_TIERS[@]}"; do dv="${t^^}_DRAFT"; [[ -n "${!dv:-}" ]] && MODEL_IS=$((MODEL_IS+1)); done
+sbegin 4 "$MODEL_IS"
 printf '  %s│%s\n' "$D" "$R"
 printf '  %s│  %-7s %-42s %-8s %s%s\n' "$D" "KATMAN" "MODEL" "BOYUT" "KULLANIM" "$R"
 printf '  %s│  %-7s %-42s %-8s %s%s\n' "$D" "──────" "─────" "─────" "────────" "$R"
@@ -757,7 +791,8 @@ send
 # ── 5 KAPI AYARI ────────────────────────────────────────────────────────────
 #  Kurulu olmayan katman da tanımlanır ama isteği kurulu bir katmana düşer.
 #  Böylece "model bulunamadı" hatası yerine çalışan bir cevap gelir.
-sbegin 5
+sbegin 5 $(( 2 + WITH_SWAP ))
+is "kapı ayarı (litellm.yaml)"
 FALLBACK_MAIN=opus; [[ " ${TIERS[*]} " == *" opus "* ]] || FALLBACK_MAIN=sonnet
 
 # Kapı katmanlara doğrudan mı bakacak, yoksa llama-swap üzerinden mi? Tek fark
@@ -807,6 +842,7 @@ YAML
 #  bütün vLLM bayrakları docker-compose.yml ve .env içinde tek yerde kalır.
 #  cmd düz exec edilir (kabuk yok), o yüzden komutlar tek satır ve sade.
 if (( WITH_SWAP )); then
+  is "llama-swap ayarı"
   SWAP_HEALTH="${SWAP_HEALTH_TIMEOUT:-2100}"   # ilk açılışta GPU çekirdeği derlenir
   SWAP_UNLOAD="${SWAP_UNLOAD_TIMEOUT:-60}"     # durdurmanın bitmesini bekle
   {
@@ -852,6 +888,7 @@ YAML
   log "   ısınma payı ${SWAP_HEALTH}s · boşta düşme ${SWAP_TTL:-1800}s · kapı → llamaswap:8080"
 fi
 
+is "katman durumu"
 for t in haiku sonnet opus fable; do
   if [[ -f "$MODELS/$t/config.json" ]]; then
     ok "$t → $(tier_repo "$t")  :$(tier_port "$t")"
@@ -903,7 +940,8 @@ anahtarlari_uret(){
   ok "ajan anahtarları üretildi: insan (fable dahil) · canvas · nemoclaw · a2a (fable yok, ${BUTCE}M token/gün)"
   log "   harcama ve kalan bütçe: spark anahtarlar"
 }
-sbegin 6
+sbegin 6 $(( 2 + WITH_CANVAS + WITH_A2A + WITH_EXTRAS ))
+is "servisler başlatılıyor ve kapı bekleniyor"
 if (( WITH_SWAP )); then
   # Konteynerler oluşturulur ama başlatılmaz; açma işini llama-swap üstlenir.
   CREATE_PROFILES=(--profile demo --profile daily)
@@ -936,8 +974,10 @@ else
   done
   wait_http http://127.0.0.1:4000/health/liveliness 300 kapı || die "kapı açılmadı"
 fi
+is "ajan anahtarları (model izni ve bütçe)"
 anahtarlari_uret
 if (( WITH_CANVAS )); then
+  is "Agent Canvas"
   CP="${CANVAS_PORT:-8300}"
   if DC --profile canvas up -d >>"$LOGFILE" 2>&1; then
     t=0
@@ -980,6 +1020,7 @@ JSON
   fi
 fi
 if (( WITH_A2A )); then
+  is "A2A köprüsü"
   AP="${A2A_PORT:-8400}"
   if DC --profile a2a up -d >>"$LOGFILE" 2>&1 && wait_http "http://127.0.0.1:$AP/health" 90 "A2A köprüsü"; then
     A2AR="$(curl -sf --max-time 10 "http://127.0.0.1:$AP/health" 2>/dev/null | jq -r '.roles|join(", ")' 2>/dev/null)"
@@ -989,15 +1030,17 @@ if (( WITH_A2A )); then
     warn "A2A köprüsü açılmadı: spark logs a2a"
   fi
 fi
-((WITH_EXTRAS)) && { DC --profile extras up -d && ok "Open WebUI: http://localhost:3000" || warn "ekstralar açılmadı"; }
+((WITH_EXTRAS)) && { is "ekstralar (Open WebUI, Qdrant)"; DC --profile extras up -d && ok "Open WebUI: http://localhost:3000" || warn "ekstralar açılmadı"; }
 send
 
 # ── 7 CLAUDE CODE ───────────────────────────────────────────────────────────
-sbegin 7
+sbegin 7 2
+is "Claude Code CLI"
 # Tek host kurulumu bu: Claude Code senin terminalinde çalışan bir CLI,
 # konteynerde çalıştırmak dosya/git erişimini gereksiz zorlaştırırdı.
 have claude || spin "Claude Code indiriliyor" bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
 export PATH="$HOME/.local/bin:$PATH"; have claude || die "claude komutu bulunamadı"
+is "yerel kapıya bağlama (.bashrc)"
 sed -i '/# >>> spark-stack >>>/,/# <<< spark-stack <<</d' ~/.bashrc
 cat >> ~/.bashrc <<EOF
 # >>> spark-stack >>>
@@ -1017,8 +1060,9 @@ ok "Claude Code yerel kapıya bağlandı (bulut kapalı)"
 send
 
 # ── 8 MCP · hepsi konteyner ────────────────────────────────────────────────
-sbegin 8
+sbegin 8 8
 addmcp(){ local n=$1; shift
+  is "MCP: $n"
   if claude mcp list 2>/dev/null | grep -q "^$n"; then ok "$n (zaten ekli)"
   elif claude mcp add --scope user "$n" -- "$@" >>"$LOGFILE" 2>&1; then ok "$n"
   else warn "$n eklenemedi"; fi; }
@@ -1032,12 +1076,14 @@ addmcp memory     docker run -i --rm -v "$DATA/mcp-memory:/app/dist" mcp/memory
 addmcp sequential-thinking docker run -i --rm mcp/sequentialthinking
 addmcp context7   docker run -i --rm mcp/context7
 addmcp playwright docker run -i --rm --init --pull=always mcr.microsoft.com/playwright/mcp
+is "MCP imajları indiriliyor (7 imaj)"
 for i in mcp/filesystem mcp/fetch mcp/git mcp/memory mcp/sequentialthinking mcp/context7 mcr.microsoft.com/playwright/mcp; do
   spin "MCP imajı: ${i##*/}" dk pull "$i" || warn "${i} indirilemedi"; done
 send
 
 # ── 9 SKILL'LER ────────────────────────────────────────────────────────────
-sbegin 9
+sbegin 9 1
+is "superpowers skill paketi"
 mkdir -p "$HOME/.claude/skills"
 if claude plugin marketplace add obra/superpowers-marketplace >>"$LOGFILE" 2>&1 \
  && claude plugin install superpowers@superpowers-marketplace >>"$LOGFILE" 2>&1; then
@@ -1058,7 +1104,7 @@ send
 #  Kaynak at → Claude okur, bağlar, Obsidian vault'una kaydeder. Kanıt/alıntı
 #  takibi yapar, BM25 ile arar (embedding gerekmez), düz Markdown bırakır.
 #  Kod yazarken notlarına bakabilmen için: /claude-obsidian:wiki-query
-sbegin 10
+sbegin 10 $(( WITH_WIKI ? 6 : 0 ))
 if (( WITH_WIKI == 0 )); then
   log "atlandı, sonradan:  bash install.sh --with-wiki --resume"
 else
@@ -1066,6 +1112,7 @@ else
   if [[ "$(printf '%s\n3.11\n' "$PYV" | sort -V | head -1)" != "3.11" ]]; then
     warn "python3 $PYV < 3.11: bilgi tabanı atlanıyor (claude-obsidian 3.11+ ister)"
   else
+    is "python3 sürümü ve Obsidian uygulaması"
     ok "python3 $PYV"
     # ── Obsidian uygulaması (ARM64 AppImage) ──────────────────────────────
     #  Spark aarch64; Obsidian resmi .deb'i yalnız amd64 için var, ARM64 tarafında
@@ -1112,11 +1159,13 @@ DESKEOF
       fi
     fi
 
+    is "claude-obsidian eklentisi (15 skill)"
     WIKI_DIR="$AI_ROOT/claude-obsidian"
     if [[ -d "$WIKI_DIR/.git" ]]; then spin "claude-obsidian güncelleniyor" git -C "$WIKI_DIR" pull -q || true
     else spin "claude-obsidian indiriliyor" git clone -q https://github.com/AgriciDaniel/claude-obsidian "$WIKI_DIR" || die "claude-obsidian indirilemedi"; fi
     ok "ürün: $WIKI_DIR ($(git -C "$WIKI_DIR" describe --tags --always 2>/dev/null || echo main))"
 
+    is "vault hazırlığı (init/adopt, iki aşamalı onay)"
     # Kasa yolu: --vault ile verilmediyse varsayılan
     VAULT="${OBSIDIAN_VAULT:-$HOME/vault}"
 
@@ -1141,6 +1190,7 @@ DESKEOF
       ok "vault hazır: $VAULT"
     fi
 
+    is "ortak skill dizini yeniden derleniyor"
     # Ortak skill dizinini yeniden derle: claude-obsidian'ın 15 skill'i artık
     # burada, PRODUCT_ROOT kaptaki /opt/claude-obsidian'a sabitleniyor. Böylece
     # Canvas'taki ajan da wiki-query/wiki-retrieve kullanabiliyor, yani vault
@@ -1153,6 +1203,7 @@ DESKEOF
       warn "ortak skill dizini derlenemedi"
     fi
 
+    is "wiki komutu"
     # 'wiki' komutu: vault'a girip Claude Code'u eklentiyle açar
     sudo tee /usr/local/bin/wiki >/dev/null <<WIKIEOF
 #!/usr/bin/env bash
@@ -1169,6 +1220,7 @@ WIKIEOF
     sudo chmod +x /usr/local/bin/wiki
     ok "'wiki' komutu kuruldu"
 
+    is "vault MCP kaydı"
     # Kod yazarken notlara bakabilmek için: vault'u MCP olarak ekle
     if claude mcp list 2>/dev/null | grep -q '^vault'; then ok "vault MCP zaten ekli"
     elif claude mcp add --scope user vault -- docker run -i --rm \
@@ -1194,7 +1246,7 @@ send
 #  Model buluttan değil bizim kapımızdan gelir: LiteLLM :4000 OpenAI uyumlu uç
 #  olarak kaydedilir. Anthropic uyumlu yol da var ama OpenClaw o yolda akışta
 #  native tool_use/emit_ok doğrulaması arıyor; yerel modellerde kırılgan.
-sbegin 11
+sbegin 11 $(( WITH_NEMOCLAW ? 2 : 0 ))
 if (( WITH_NEMOCLAW == 0 )); then
   log "atlandı, sonradan:  bash install.sh --with-nemoclaw --resume"
 else
@@ -1213,6 +1265,7 @@ else
   if have node; then log "node $(node -v 2>/dev/null || echo '?')  (NemoClaw en az v22.19 ister)"
   else log "node yok: NemoClaw kendi kuracak (nvm ile)"; fi
 
+  is "NemoClaw kurulumu (Node.js + OpenShell + kap)"
   export PATH="$HOME/.local/bin:$PATH"
   if have nemoclaw; then
     ok "nemoclaw zaten kurulu: $(nemoclaw --version 2>/dev/null | head -1 || echo '?')"
@@ -1246,6 +1299,7 @@ else
   fi
 
   if have nemoclaw; then
+    is "kap kaydı ve panel adresi"
     ok "nemoclaw $(nemoclaw --version 2>/dev/null | head -1 || echo '?')"
     nemoclaw list --json >>"$LOGFILE" 2>&1 || true
     NC_DASH="$(nemoclaw "$NEMOCLAW_SANDBOX" dashboard-url --quiet 2>/dev/null | tr -d '\r' | head -1 || true)"
