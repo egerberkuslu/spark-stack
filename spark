@@ -8,6 +8,7 @@
 #    spark swap                          llama-swap durumu: hangi katman ayakta
 #    spark canvas                        Agent Canvas adresi ve panel anahtarı
 #    spark a2a                           A2A köprüsü: kart ve roller
+#    spark agents [--liste|--onerilen]   katalogdan uzman rol çek
 #    spark logs [servis]                 canlı log
 #    spark pull <sonnet|opus|fable>      model ağırlığı indir (konteynerle)
 #    spark models                        katman → model eşlemesi ve durum
@@ -194,6 +195,16 @@ case "${1:-status}" in
     printf '\n'
     ;;
 
+  agents)
+    shift
+    IA="$AI_ROOT/compose/ice-aktar.py"
+    [[ -f "$IA" ]] || { echo "içe aktarıcı yok: $IA  (bash install.sh --with-agency --resume)"; exit 1; }
+    exec python3 "$IA" "$@" \
+      --host-dizin "$HOME/.claude/agents" \
+      --canvas-dizin "$AI_ROOT/data/canvas/agents" \
+      --kurallar "${OBSIDIAN_VAULT:-$HOME/vault}/kurallar"
+    ;;
+
   status)
     printf '\n  %sspark-stack%s\n\n' "$B" "$R"
     repo_of() { local v="${1^^}_REPO"; echo "${!v:-?}"; }
@@ -217,6 +228,10 @@ case "${1:-status}" in
     if a2a_on; then
       printf '  %-9s %sÇALIŞIYOR%s  http://localhost:%s/.well-known/agent-card.json\n' "a2a" "$G" "$R" "${A2A_PORT:-8400}"
     fi
+    RS=$(ls -1 "$HOME/.claude/agents"/spark-*.md 2>/dev/null | wc -l)
+    AS=$(ls -1 "$HOME/.claude/agents"/ajans-*.md 2>/dev/null | wc -l)
+    printf '\n  Roller      : %s temel' "$RS"
+    (( AS )) && printf ' + %s katalog' "$AS"
     printf '\n  Bellek      : %s\n' "$(memread)"
     printf '  Modeller    : %s\n' "$(du -sh "$AI_ROOT/models" 2>/dev/null | cut -f1)"
     printf '  Konteynerler:\n'
@@ -267,5 +282,5 @@ case "${1:-status}" in
 
   update) $DC --profile daily --profile fable --profile swap --profile canvas --profile a2a --profile extras pull ;;
 
-  *) sed -n '4,16p' "$0" | sed 's/^# \?//' ;;
+  *) sed -n '4,17p' "$0" | sed 's/^# \?//' ;;
 esac

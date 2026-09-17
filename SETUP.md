@@ -150,6 +150,7 @@ bash install.sh --with-nemoclaw --resume   # NemoClaw ajan kabı
 bash install.sh --with-swap --resume       # llama-swap ile talep-güdümlü katman
 bash install.sh --with-canvas --resume     # Agent Canvas kontrol merkezi
 bash install.sh --with-a2a --resume        # A2A köprüsü (roller protokolle açılır)
+bash install.sh --with-agency --resume     # katalogdan 15 uzman rol
 ```
 
 ---
@@ -235,6 +236,32 @@ Panel: `http://localhost:8300/canvas` — kendi portu 8000 ama onu `sonnet` kull
 Claude Code'u alt ajan olarak çalıştırmak için **Settings → Agent → Preset: Claude Code**. Kap zaten yerel kapıya bakacak şekilde kurulu (`ANTHROPIC_BASE_URL`). Claude aboneliğinin OAuth token'ını buraya girme — base URL ile birlikte çalışmıyor.
 
 Proje klasörünü değiştirmek için `--projects ~/kod`.
+
+---
+
+## Role görev vermek ve katalog rolleri
+
+Rolü elle atamazsın; yönlendiren ajan işi bölüp devreder. İstersen adıyla da isteyebilirsin:
+
+```
+"ödeme akışına indirim kuponu ekle, testleriyle"      → kendisi böler
+"spark-kod'a devret: şu fonksiyonu yaz"               → adıyla
+curl localhost:8400/agents/spark-kod/a2a/v1 ...       → protokolle
+```
+
+Canvas'ta rol listesi konuşma başında kendiliğinden yüklenir, ayrı bir seçim adımı yoktur.
+
+`--with-agency` ile [agency-agents](https://github.com/msitarzewski/agency-agents) (MIT)
+kataloğundan 15 uzman rol gelir (`ajans-` önekiyle):
+
+```bash
+spark agents --liste                 # katalogdaki bütün ajanlar
+spark agents --onerilen              # seçilmiş seti kur
+spark agents engineering/engineering-sre --model sonnet
+```
+
+İçe aktarıcı adı slug'a çevirir, katman adını ekler ve gövdeye şirket kurallarını bağlar.
+Kendi rollerimizle çakışanlar (kod/test/denetim) bilerek dışarıda.
 
 ---
 

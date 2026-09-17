@@ -19,6 +19,7 @@
 #    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
 #    --with-canvas       Agent Canvas ajan kontrol merkezi (--all dahil)      #
 #    --with-a2a          A2A köprüsü: rolleri protokolle aç (--all dahil)     #
+#    --with-agency       agency-agents kataloğundan 15 uzman rol (--all DEĞİL)#
 #    --projects PATH     Canvas ajanının göreceği klasör (vars. ~/projects)   #
 #    --sandbox AD        NemoClaw kabının adı (varsayılan spark)              #
 #    --no-<parça>        --all içinden birini kapat: swap/canvas/a2a/nemoclaw #
@@ -39,6 +40,7 @@ MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
 WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0; WITH_CANVAS=0; WITH_A2A=0
+WITH_AGENCY=0
 RESUME=0; MODE=install; DEMO=0
 TIERS=(haiku sonnet opus)          # varsayılan kurulum katmanları
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-}"
@@ -155,13 +157,14 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --with-swap) WITH_SWAP=1 ;; --no-swap) WITH_SWAP=0 ;;
   --with-canvas) WITH_CANVAS=1 ;; --no-canvas) WITH_CANVAS=0 ;;
   --with-a2a) WITH_A2A=1 ;; --no-a2a) WITH_A2A=0 ;;
+  --with-agency) WITH_AGENCY=1 ;; --no-agency) WITH_AGENCY=0 ;;
   --projects) shift; CANVAS_PROJECTS="${1:-}" ;; --projects=*) CANVAS_PROJECTS="${1#--projects=}" ;;
   --sandbox) shift; NEMOCLAW_SANDBOX="${1:-spark}" ;; --sandbox=*) NEMOCLAW_SANDBOX="${1#--sandbox=}" ;;
   --with-wiki) WITH_WIKI=1 ;; --vault) shift; OBSIDIAN_VAULT="${1:-}"; WITH_WIKI=1 ;;
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,27p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,28p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
@@ -396,6 +399,7 @@ mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,w
          "$CDIR" "$AI_ROOT/bin"
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
 [[ -f "$SRC_DIR/a2a/server.py" ]] && cp "$SRC_DIR/a2a/server.py" "$CDIR/a2a-server.py"
+[[ -f "$SRC_DIR/roller/ice-aktar.py" ]] && cp "$SRC_DIR/roller/ice-aktar.py" "$CDIR/ice-aktar.py"
 if [[ ! -f "$ENVF" ]]; then cp "$SRC_DIR/.env.example" "$ENVF"; fi
 sed -i "s|^HF_TOKEN=.*|HF_TOKEN=$HF_TOKEN|; s|^AI_ROOT=.*|AI_ROOT=$AI_ROOT|" "$ENVF"
 grep -q '^VLLM_IMAGE=' "$ENVF" || echo "VLLM_IMAGE=ghcr.io/aeon-7/aeon-vllm-ultimate:latest" >> "$ENVF"
@@ -487,6 +491,22 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   else
     cp "$SRC_DIR/roller/AGENTS.md" "$PROJ/AGENTS.md"
     ok "proje sözleşmesi: $PROJ/AGENTS.md"
+  fi
+  # ── Katalogtan uzman roller (isteğe bağlı) ──────────────────────────────
+  #  agency-agents (MIT) kataloğundaki personalar bizim rol biçimimizle aynı
+  #  Markdown yapısında. İçe aktarıcı üçünü değiştirir: adı slug'a çevirir,
+  #  katman adını ekler, gövdeye şirket kurallarını bağlar. "ajans-" öneki
+  #  kendi rollerimizle karışmasını önler.
+  if (( WITH_AGENCY )); then
+    if python3 "$SRC_DIR/roller/ice-aktar.py" --onerilen \
+         --host-dizin "$HOME/.claude/agents" \
+         --canvas-dizin "$CANVAS_AGENTS" \
+         --kurallar "$KURALLAR" >>"$LOGFILE" 2>&1; then
+      AJANS=$(ls -1 "$HOME/.claude/agents"/ajans-*.md 2>/dev/null | wc -l)
+      ok "katalogtan $AJANS uzman rol çekildi (ajans-* önekiyle)"
+    else
+      warn "katalog rolleri çekilemedi (internet?) — sonra: spark agents"
+    fi
   fi
 else
   warn "roller/ klasörü bulunamadı — kurallar ve roller kurulmadı"
@@ -1052,6 +1072,8 @@ if (( WITH_A2A )); then
   [[ -n "$ASK" ]] && v_ok "A2A köprüsü yayında: $ASK" || v_no "A2A kartı okunamadı — spark logs a2a"
 fi
 
+(( WITH_AGENCY )) && { ASAY=$(ls -1 "$HOME/.claude/agents"/ajans-*.md 2>/dev/null | wc -l)
+  (( ASAY )) && v_ok "katalog rolleri: $ASAY adet" || v_no "katalog rolleri kurulmadı"; }
 (( WITH_NEMOCLAW )) && { have nemoclaw && v_ok "NemoClaw CLI hazır" || v_no "nemoclaw komutu yok"; }
 (( WITH_SWAP )) && { curl -sf --max-time 5 "http://127.0.0.1:${SWAP_PORT:-8081}/health" >/dev/null 2>&1 \
   && v_ok "llama-swap cevap veriyor" || v_no "llama-swap cevap vermiyor — spark logs llamaswap"; }
@@ -1096,6 +1118,11 @@ cat <<FIN
 
       Claude Code'u alt ajan yapmak için: Settings → Agent → Preset: Claude Code
       ${D}kap zaten bizim kapıya bakıyor (ANTHROPIC_BASE_URL), abonelik token'ı verme${R}
+
+  ${B}UZMAN ROLLER${R}  (--with-agency ile kurulduysa)
+      spark agents --liste       katalogdaki bütün ajanlar
+      spark agents --onerilen    seçilmiş seti (yeniden) kur
+      ${D}claude içinde: "ajans-backend-architect'e devret" de, ya da tarif et${R}
 
   ${B}A2A KÖPRÜSÜ${R}  (--with-a2a veya --all ile kurulduysa)
       curl localhost:${A2A_PORT:-8400}/.well-known/agent-card.json

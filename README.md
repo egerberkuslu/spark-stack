@@ -94,6 +94,7 @@ bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    5
 | `--with-swap` | llama-swap: katmanı istek anında aç (`--all` içinde) |
 | `--with-canvas` | Agent Canvas ajan kontrol merkezi (`--all` içinde) |
 | `--with-a2a` | A2A köprüsü: rolleri protokolle aç (`--all` içinde) |
+| `--with-agency` | agency-agents kataloğundan 15 uzman rol (`--all` içinde **değil**) |
 | `--projects PATH` | Canvas ajanının göreceği klasör (varsayılan `~/projects`) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--resume` | Yarım kalan kurulumu sürdür |
@@ -126,6 +127,7 @@ spark status                # servis durumu, bellek, disk
 spark swap                  # llama-swap: hangi katman ayakta
 spark canvas                # Agent Canvas adresi ve ayarları
 spark a2a                   # A2A köprüsü: kart ve roller
+spark agents --liste        # katalogdaki uzman roller
 spark up canvas             # kontrol merkezini aç
 spark up swap               # llama-swap düzenini aç
 spark up demo               # haiku + sonnet
@@ -312,6 +314,43 @@ devir aracı hiç yüklenmez) ve model yerel kapıya bağlanır. Yazmakla yetinm
 doğrular; tutmazsa uyarır ve elle yapılacak adımı yazar. `spark canvas` bu ayarı her seferinde
 canlı okuyup gösterir, yani "açık sanıyordum" durumu olmaz.
 
+### Role nasıl görev verilir
+
+Rolü elle "atamazsın" — yönlendiren ajan işi bölüp devreder. Üç yol var:
+
+```
+Bırak o karar versin   "ödeme akışına indirim kuponu ekle, testleriyle"
+Rolü adıyla iste       "spark-kod'a devret: şu fonksiyonu yaz"
+Doğrudan protokolle    curl localhost:8400/agents/spark-kod/a2a/v1 ...
+```
+
+Canvas'ta rol listesi konuşma başında kendiliğinden yüklenir; ayrı bir "rol seç" adımı yoktur.
+Devrin çalışması için tek koşul `enable_sub_agents` ayarıdır ve onu kurulum açıyor.
+
+### Katalogdan uzman roller
+
+`--with-agency` ile [agency-agents](https://github.com/msitarzewski/agency-agents) (MIT)
+kataloğundan seçilmiş 15 uzman rol çekilir: backend/frontend/yazılım mimarı, veritabanı
+iyileştirici, DevOps, SRE, olay müdahale, git akışı, teknik yazar, en-az-değişiklik mühendisi,
+kod tabanına giriş, API platformu, ürün yöneticisi, sprint önceliklendirici, toplantı notu.
+
+```bash
+spark agents --liste       # katalogdaki bütün ajanlar
+spark agents --onerilen    # seçilmiş seti (yeniden) kur
+spark agents engineering/engineering-rust-refactoring-specialist --model opus
+```
+
+İçe aktarıcı üç şeyi uyarlar: adı slug'a çevirir, katman adını ekler (host'ta `opus`, Canvas'ta
+`litellm_proxy/opus`), ve gövdeye şirket kurallarını bağlar — yoksa çekilen persona bizim
+kurallarımızı okumaz. Adlar `ajans-` önekiyle gelir, kendi rollerimizle karışmaz.
+
+Kendi rollerimizle çakışanlar (kod yazan, test eden, denetleyen) bilerek dışarıda: onlar bizim
+kurallarımıza göre yazıldı, genel bir persona onların yerini almamalı.
+
+`agency-agents-app` masaüstü uygulamasına gerek yok. O uygulamanın Claude Code biçimi
+`identity`, yani dosyayı olduğu gibi kopyalıyor — aynı işi `spark agents` yapıyor. Zaten Linux
+ikilileri amd64; Spark aarch64 olduğu için kurulamazdı.
+
 Kuralları düzenlemek için dosyaları doğrudan aç, ya da `wiki` komutuyla bilgi tabanında çalış.
 
 ### Roller protokolle de adreslenebilir
@@ -437,6 +476,7 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 | LiteLLM | `ghcr.io/berriai/litellm` |
 | llama-swap | `ghcr.io/mostlygeek/llama-swap` (`unified-cuda13`, arm64) |
 | Agent Canvas | `ghcr.io/openhands/agent-canvas` (`1.19.0`, arm64) |
+| Uzman roller | `msitarzewski/agency-agents` (MIT) — `--with-agency` |
 | MCP sunucuları | `mcp/*` Docker kataloğu |
 | Skill kütüphanesi | `obra/superpowers` |
 | Bilgi tabanı | `AgriciDaniel/claude-obsidian` |
