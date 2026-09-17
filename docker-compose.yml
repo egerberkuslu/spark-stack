@@ -286,18 +286,20 @@ services:
       - ${AI_ROOT:-/srv/ai}/models/hf-cache:/hf
       - ${AI_ROOT:-/srv/ai}/data/cache-fable:/root/.cache/vllm
     environment:
-      # Hazırlanmış (fp8 yan katmanlı) düzen kullanılıyorsa açılır
+      # Hepsi .env'den gelir ve varsayılanları KAPALI. Kurulum bu katmanı
+      # Flash-Next'e ayarladığında değerleri yazar; başka bir model seçersen
+      # kapalı kalır ve stok vLLM tanımadığı ayarlarla uğraşmaz.
       VLLM_FP8_HYBRID: "${FABLE_FP8_HYBRID:-0}"
-      VLLM_USE_DEEP_GEMM: "0"
-      # PLE tablosu diskten okunur: bunlar olmadan model belleğe sığmaz
-      VLLM_PLE_MMAP: "1"
+      VLLM_USE_DEEP_GEMM: "${FABLE_DEEP_GEMM:-1}"
+      # PLE tablosu diskten okunur: bunlar olmadan Flash-Next belleğe sığmaz
+      VLLM_PLE_MMAP: "${FABLE_PLE_MMAP:-0}"
       VLLM_PLE_MMAP_WORKERS: "${FABLE_PLE_WORKERS:-32}"
       VLLM_PLE_MMAP_MADVISE: "${FABLE_PLE_MADVISE:-random}"
       VLLM_PLE_MMAP_PREWARM: "${FABLE_PLE_PREWARM:-0}"
       # Yamanın getirdikleri: GB10'da belirlenimli top-k ve taslak sözlüğü
-      VLLM_QSA_DET_TOPK: "1"
-      VLLM_QSA_DET_LIB: /opt/llm/kernel-det/_C_det.so
-      VLLM_MTP_DRAFT_VOCAB: /opt/llm/draft_vocab_65536.npy
+      VLLM_QSA_DET_TOPK: "${FABLE_DET_TOPK:-0}"
+      VLLM_QSA_DET_LIB: "${FABLE_DET_LIB:-}"
+      VLLM_MTP_DRAFT_VOCAB: "${FABLE_DRAFT_VOCAB:-}"
       VLLM_USE_FLASHINFER_SAMPLER: "1"
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
     command: >

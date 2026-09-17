@@ -552,6 +552,46 @@ grep -q '^OH_SECRET_KEY=' "$ENVF" || echo "OH_SECRET_KEY=$(rnd 32)" >> "$ENVF"
 grep -q '^CANVAS_KEY='    "$ENVF" || echo "CANVAS_KEY=$(rnd 24)"    >> "$ENVF"
 grep -q '^LITELLM_DB_PASSWORD=' "$ENVF" || echo "LITELLM_DB_PASSWORD=$(rnd 24)" >> "$ENVF"
 grep -q '^LITELLM_SALT_KEY='    "$ENVF" || echo "LITELLM_SALT_KEY=sk-salt-$(rnd 24)" >> "$ENVF"
+
+# ── Mevcut .env'i yeni anahtarlarla tamamla ────────────────────────────────
+#  Var olan bir kurulumda .env korunuyor (senin değerlerin duruyor), ama yeni
+#  sürümün getirdiği anahtarlar orada olmaz. Eksikleri .env.example'daki
+#  değerle ekliyoruz; tek kaynak orası, burada değer tekrarlamıyoruz.
+env_tamamla(){
+  local a v
+  for a in "$@"; do
+    grep -q "^$a=" "$ENVF" && continue
+    v="$(grep -m1 "^$a=" "$SRC_DIR/.env.example" 2>/dev/null || true)"
+    [[ -n "$v" ]] && { printf '%s\n' "$v" >> "$ENVF"; log "   .env'e eklendi: $a"; }
+  done
+}
+env_tamamla FABLE_REPO FABLE_MEM FABLE_CTX FABLE_SEQS FABLE_RESIDENT_GB \
+            FABLE_HYBRID FABLE_PLE_WORKERS FABLE_PLE_MADVISE FABLE_PLE_PREWARM
+
+# fable modeli değişti: eski varsayılanı kullananları yeni varsayılana taşıyoruz.
+# Kendi modelini seçmiş olanın tercihine dokunmuyoruz, yalnız durumu söylüyoruz.
+FABLE_ESKI="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+FABLE_YENI="$(grep -m1 '^FABLE_REPO=' "$SRC_DIR/.env.example" 2>/dev/null | cut -d= -f2-)"
+FABLE_SIMDI="$(grep -m1 '^FABLE_REPO=' "$ENVF" 2>/dev/null | cut -d= -f2-)"
+if [[ -n "$FABLE_YENI" && "$FABLE_SIMDI" == "$FABLE_ESKI" ]]; then
+  sed -i "s|^FABLE_REPO=.*|FABLE_REPO=$FABLE_YENI|" "$ENVF"
+  sed -i "s|^FABLE_MEM=.*|FABLE_MEM=0.80|; s|^FABLE_CTX=.*|FABLE_CTX=262144|" "$ENVF"
+  warn "fable modeli güncellendi: Nemotron-3-Super → ${FABLE_YENI##*/}"
+  log "   eskisine dönmek istersen .env içinde FABLE_REPO=$FABLE_ESKI yaz"
+elif [[ -n "$FABLE_SIMDI" && "$FABLE_SIMDI" != "$FABLE_YENI" ]]; then
+  log "fable modeli senin seçtiğin gibi bırakıldı: ${FABLE_SIMDI##*/}"
+fi
+# fable imajı modele göre: Flash-Next yamalı imaj ister, diğerleri stok vLLM.
+# Flash-Next'e özgü ayarlar da başka bir modele geçildiyse temizlenir.
+FABLE_SIMDI="$(grep -m1 '^FABLE_REPO=' "$ENVF" 2>/dev/null | cut -d= -f2-)"
+sed -i '/^FABLE_IMAGE=/d' "$ENVF"
+if [[ "$FABLE_SIMDI" == *Flash-Next* ]]; then
+  echo "FABLE_IMAGE=${FABLE_IMAGE:-qwen38-flash-dgx:latest}" >> "$ENVF"
+else
+  echo "FABLE_IMAGE=${VLLM_IMAGE:-ghcr.io/aeon-7/aeon-vllm-ultimate:latest}" >> "$ENVF"
+  sed -i '/^FABLE_SNAPSHOT=/d;/^FABLE_FP8_HYBRID=/d;/^FABLE_DEEP_GEMM=/d' "$ENVF"
+  sed -i '/^FABLE_PLE_MMAP=/d;/^FABLE_DET_TOPK=/d;/^FABLE_DET_LIB=/d;/^FABLE_DRAFT_VOCAB=/d' "$ENVF"
+fi
 chmod 600 "$ENVF"
 set -a
 # shellcheck source=/dev/null
@@ -1038,8 +1078,18 @@ fable_flashnext(){
   local ic="/hf/hub/models--${repo//\//--}/snapshots/$snap_ad"
   local hib=0
   [[ -f "$hib_host/config.json" ]] && { ic="${ic}-fp8hybrid"; hib=1; }
-  sed -i '/^FABLE_SNAPSHOT=/d;/^FABLE_FP8_HYBRID=/d' "$ENVF"
-  { echo "FABLE_SNAPSHOT=$ic"; echo "FABLE_FP8_HYBRID=$hib"; } >> "$ENVF"
+  # Bu katmanı Flash-Next'e ayarlayan bütün anahtarlar burada yazılır.
+  # compose'daki varsayılanlar kapalı olduğu için başka bir modele geçersen
+  # bu satırları silmek yeterli, ayar kendiliğinden stok vLLM'e döner.
+  sed -i '/^FABLE_SNAPSHOT=/d;/^FABLE_FP8_HYBRID=/d;/^FABLE_DEEP_GEMM=/d' "$ENVF"
+  sed -i '/^FABLE_PLE_MMAP=/d;/^FABLE_DET_TOPK=/d;/^FABLE_DET_LIB=/d;/^FABLE_DRAFT_VOCAB=/d' "$ENVF"
+  { echo "FABLE_SNAPSHOT=$ic"
+    echo "FABLE_FP8_HYBRID=$hib"
+    echo "FABLE_DEEP_GEMM=0"
+    echo "FABLE_PLE_MMAP=1"
+    echo "FABLE_DET_TOPK=1"
+    echo "FABLE_DET_LIB=/opt/llm/kernel-det/_C_det.so"
+    echo "FABLE_DRAFT_VOCAB=/opt/llm/draft_vocab_65536.npy"; } >> "$ENVF"
   export FABLE_SNAPSHOT="$ic" FABLE_FP8_HYBRID="$hib"
   ok "fable yolu: $ic  ·  hazırlanmış düzen: $( ((hib)) && echo evet || echo hayır )"
 }
