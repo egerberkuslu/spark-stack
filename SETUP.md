@@ -11,6 +11,9 @@ DGX Spark'ta sıfırdan çalışan bir kuruluma kadar adım adım.
 
 Süreler indirmeyi ve ilk açılıştaki GPU çekirdeği derlemesini kapsar.
 
+> **Üçü de HuggingFace anahtarı ister.** Model ağırlıkları oradan iniyor; `--demo` bile
+> anahtarsız kurulmaz. Nasıl alınacağı bir alttaki bölümde.
+
 ---
 
 ## Katmanlar ve modeller
@@ -53,7 +56,10 @@ cd spark-stack
 bash install.sh --all --token hf_xxx
 ```
 
-Yalnızca demo için:
+`hf_xxx` yerine bir önceki bölümde aldığın anahtarı yaz. `--token` vermezsen kurulum ekranda
+sorar; üç deneme hakkın olur ve `hf_` ile başlamayan bir değeri kabul etmez.
+
+Yalnızca demo için (yine anahtar gerekir):
 
 ```bash
 bash install.sh --demo --token hf_xxx

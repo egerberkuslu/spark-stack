@@ -12,6 +12,10 @@ cd spark-stack
 bash install.sh --all --token hf_xxx
 ```
 
+`hf_xxx` yerine kendi HuggingFace anahtarını yaz — model ağırlıkları oradan iniyor ve
+anahtarsız kurulum olmuyor. Ücretsiz almak bir dakika: [huggingface.co](https://huggingface.co)
+→ Settings → Access Tokens → Create new token → Type: **Read**.
+
 1 Gbit hatta yaklaşık 50-70 dakika. Adım adım anlatım: **[SETUP.md](SETUP.md)**
 
 Bunu tek kişilik asistan olarak değil, şirketin işlerini yürüten ajan altyapısı olarak
@@ -67,17 +71,22 @@ Makineye kurulan tek bileşen Claude Code'dur (tek dosyalık CLI, terminalde ça
 
 ## Kurulum seçenekleri
 
+> **Her kurulum HuggingFace anahtarı ister** — `--demo` dahil, `--all` dahil. Model
+> ağırlıkları oradan iniyor, anahtarsız hiçbir katman inmez. Ücretsiz: [huggingface.co](https://huggingface.co)
+> → Settings → Access Tokens → **Create new token** → Type: **Read**. Sonra `hf_` ile başlayan
+> değeri `--token` ile ver; vermezsen kurulum sorar ve `hf_` ile başlamayan bir değeri kabul etmez.
+
 ```bash
-bash install.sh --demo      # haiku + sonnet            ~45 GB    15-20 dk
-bash install.sh             # + opus                    ~65 GB    30-40 dk
-bash install.sh --all       # dört katman + eklentiler ~132 GB    50-70 dk
+bash install.sh --demo --token hf_xxx   # haiku + sonnet            ~45 GB    15-20 dk
+bash install.sh --token hf_xxx          # + opus                    ~65 GB    30-40 dk
+bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    50-70 dk
 ```
 
 ![Kurulum profilleri](docs/figures/spark-kurulum-profilleri.png)
 
 | Bayrak | Açıklama |
 |---|---|
-| `--token hf_xxx` | HuggingFace anahtarını komutla ver (sorulmaz) |
+| `--token hf_xxx` | **Zorunlu.** HuggingFace anahtarı; verilmezse kurulum sorar |
 | `--with-fable` | Dördüncü katman |
 | `--with-extras` | Open WebUI, Qdrant, Whisper |
 | `--with-wiki` | Obsidian + claude-obsidian bilgi tabanı |

@@ -6,6 +6,11 @@
 #    bash install.sh                    + opus                   ~65 GB       #
 #    bash install.sh --all              dört katman + eklentiler ~132 GB      #
 #                                                                             #
+#    HER KURULUM HuggingFace anahtarı ister — modeller oradan iner.           #
+#    Ücretsiz: huggingface.co → Settings → Access Tokens → Read               #
+#    Komutla ver:  bash install.sh --all --token hf_xxx                       #
+#    Vermezsen kurulum sorar; 'hf_' ile başlamayan değer kabul edilmez.       #
+#                                                                             #
 #    --token hf_xxx      HuggingFace anahtarını komutla ver                   #
 #    --with-fable        dördüncü katman (en yüksek kalite)                   #
 #    --with-extras       Open WebUI + Qdrant + Whisper                        #
@@ -156,7 +161,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,22p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,27p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
