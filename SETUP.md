@@ -106,6 +106,15 @@ konteyneri durdurmuyordu; indirme görünmeden devam ediyordu. Artık her indirm
 `sk-indir-<katman>` adıyla açılıyor ve kesintide adıyla durduruluyor, ilerlemeyi basan alt süreç
 de kapatılıyor. Aynısı terminali kapatmakta (SIGHUP) ve `kill` göndermekte de geçerli.
 
+**Sonraki koşu kalıntıyı toplar.** Kurulum ya da `--resume` başlarken `sk-indir-*` adlı çalışan
+bir indirme konteyneri kalmışsa (eski bir sürümden ya da makine kapanmasından) onu bulup
+kapatır. Yarım inen dosyalara dokunmaz: HuggingFace indirmesi `.cache/huggingface/download/`
+altında tuttuğu kayıtlarla kaldığı yerden devam eder, baştan inmez.
+
+Aynı anda iki kurulum çalışmasın diye `/srv/ai/install.pid` kilidi var. İkincisi açılmaz ve
+sebebini söyler; birincisinin kalan indirmesine de dokunmaz. Kilit normal bitişte de,
+kesintide de kalkar, süreç ölmüşse bayat kilit engel olmaz.
+
 Yarıda kesilen bir kurulumda o ana kadar açılmış servisler bilerek ayakta bırakılır: kapı ve inen
 katmanlar çalışmaya devam eder. Hepsini kapatmak istersen `spark down`, ne çalıştığını görmek
 için `spark status`.

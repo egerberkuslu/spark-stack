@@ -92,6 +92,7 @@ temizle(){
     [[ -n "$pid" ]] && { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; }
   done
   ARKA_PID=""; ISLEM_PID=""
+  kurulum_kilidi_birak
   printf '\r\033[K'
   printf '\n%s  Kesildi.%s\n' "$YLW" "$R"
   if [[ -n "$INDIR_KAP" ]] && [[ -n "${DKR:-}" ]] \
@@ -110,6 +111,53 @@ temizle(){
 }
 trap temizle INT TERM HUP
 
+# Kesilen bir önceki kurulumdan kalan indirme konteynerlerini kapatır. Yalnız
+# bizim açtığımız adlara (sk-indir-*) dokunuyoruz; yarım inen dosyalara elimizi
+# sürmüyoruz, çünkü hf download aynı klasöre tekrar koştuğunda kaldığı yerden
+# devam ediyor. Başka bir kurulum aynı anda koşuyorsa onun indirmesini kesmemek
+# için önce kilide bakıyoruz.
+eski_indirme_kapat(){
+  [[ -n "${DKR:-}" ]] || return 0
+  local kaplar adet
+  kaplar="$(dk ps -q --filter 'name=^sk-indir-' 2>/dev/null)"
+  [[ -n "$kaplar" ]] || return 0
+  adet="$(printf '%s\n' "$kaplar" | grep -c .)"
+  if kurulum_kilidi_canli; then
+    warn "$adet indirme sürüyor ama başka bir kurulum çalışıyor (PID $(cat "$KILIT" 2>/dev/null)), dokunulmadı"
+    die "aynı anda iki kurulum çalıştırma; önce onu bitir ya da durdur"
+  fi
+  warn "önceki kurulumdan kalan $adet indirme konteyneri çalışıyor, kapatılıyor"
+  dk ps --filter 'name=^sk-indir-' --format '{{.Names}}  {{.Status}}' 2>/dev/null \
+    | while IFS= read -r satir; do [[ -n "$satir" ]] && log "   $satir"; done
+  # shellcheck disable=SC2086  # kaplar birden çok kimlik taşır, bölünmesi gerek
+  dk stop -t 10 $kaplar >>"$LOGFILE" 2>&1 || true
+  # shellcheck disable=SC2086
+  dk rm -f $kaplar >>"$LOGFILE" 2>&1 || true
+  ok "kalan indirmeler durduruldu; yarım inen dosyalar duruyor, kurulum kaldığı yerden sürdürür"
+}
+
+# Kurulum kilidi: aynı anda iki kurulum .env ve konteynerler üzerinde çakışır.
+KILIT="$AI_ROOT/install.pid"
+kurulum_kilidi_canli(){
+  local pid
+  [[ -f "$KILIT" ]] || return 1
+  pid="$(cat "$KILIT" 2>/dev/null)"
+  [[ -n "$pid" && "$pid" != "$$" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  # PID geri dönüşmüş olabilir: gerçekten install.sh mi
+  grep -qa 'install\.sh' "/proc/$pid/cmdline" 2>/dev/null
+}
+kurulum_kilidi_birak(){
+  [[ -f "$KILIT" && "$(cat "$KILIT" 2>/dev/null)" == "$$" ]] && rm -f "$KILIT"
+  return 0
+}
+trap kurulum_kilidi_birak EXIT
+kurulum_kilidi_al(){
+  if kurulum_kilidi_canli; then
+    die "başka bir kurulum çalışıyor (PID $(cat "$KILIT")); ikisi birden .env ve konteynerlere yazar"
+  fi
+  echo "$$" > "$KILIT" 2>/dev/null || true
+}
 # Adım içi iş sayacı: sbegin'in ikinci argümanı o adımda kaç iş olduğunu söyler
 # (bayraklara göre hesaplanır), her iş başlamadan önce is "başlık" çağrılır.
 # Sayaç bildirilenden fazla iş görürse toplamı büyütür, yani yanlış bir sayı
@@ -433,6 +481,9 @@ groups "$USER" | grep -qw docker || { sudo usermod -aG docker "$USER"; warn "doc
 detect_docker
 [[ -n "$DKR" ]] || die "docker çalışmıyor: 'sudo systemctl status docker' ile bak"
 [[ "$DKR" == "sudo docker" ]] && log "not: bu oturumda 'sudo docker' kullanılıyor; yeni terminalde sudo'suz çalışacak"
+# Kurulum ya da --resume: kesilen bir koşudan kalan indirme varsa burada kapanır
+kurulum_kilidi_al
+eski_indirme_kapat
 
 # 1.5 NVIDIA Container Toolkit: konteynerlerin GPU'yu görmesi için
 is "NVIDIA Container Toolkit"
