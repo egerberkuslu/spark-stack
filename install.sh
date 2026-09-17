@@ -14,6 +14,9 @@
 #    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
 #    --with-canvas       Agent Canvas ajan kontrol merkezi (--all dahil)      #
 #    --with-a2a          A2A köprüsü: rolleri protokolle aç (--all dahil)     #
+#    --projects PATH     Canvas ajanının göreceği klasör (vars. ~/projects)   #
+#    --sandbox AD        NemoClaw kabının adı (varsayılan spark)              #
+#    --no-<parça>        --all içinden birini kapat: swap/canvas/a2a/nemoclaw #
 #    --vault PATH        vault yolu (varsayılan ~/vault)                      #
 #    --resume            yarım kalan kurulumu sürdür                          #
 #    --status            servis durumu     --uninstall   tümünü kaldır        #
@@ -43,7 +46,7 @@ else B=""; D=""; R=""; RED=""; GRN=""; YLW=""; BLU=""; fi
 STEP_KEYS=(precheck docker layout images models gateway boot claude mcp skills wiki nemoclaw verify)
 STEP_NAME=("Ön kontrol" "Docker + GPU altyapısı" "Dosya düzeni" "İmajlar indiriliyor" \
            "Model ağırlıkları" "Kapı ayarı" "Servisler açılıyor" "Claude Code" \
-           "MCP sunucuları" "Skill'ler ve roller" "Obsidian + bilgi tabanı" "NemoClaw ajan kabı" \
+           "MCP sunucuları" "Skill'ler" "Obsidian + bilgi tabanı" "NemoClaw ajan kabı" \
            "Doğrulama")
 STEP_WEIGHT=(1 6 1 12 50 2 15 4 8 3 3 6 1)
 TOTAL_WEIGHT=0; DONE_WEIGHT=0; CUR=0; STEP_START=0
@@ -68,9 +71,10 @@ sbegin(){ CUR=$1; STEP_START=$(date +%s)
 send(){ DONE_WEIGHT=$((DONE_WEIGHT+${STEP_WEIGHT[$CUR]})); echo "${STEP_KEYS[$CUR]}" >>"$STATE"
   printf '%s└─%s %s  %s%ss · toplam %s · kalan %d adım%s\n' "$BLU" "$R" "$(bar "$(pctnow)")" \
     "$D" $(( $(date +%s)-STEP_START )) "$(elapsed)" $(( ${#STEP_KEYS[@]}-CUR-1 )) "$R"; }
-sskip(){ DONE_WEIGHT=$((DONE_WEIGHT+${STEP_WEIGHT[$CUR]}))
-  printf '%s┌─ [%d/%d] %s (atlandı)%s\n' "$D" $((CUR+1)) ${#STEP_KEYS[@]} "${STEP_NAME[$CUR]}" "$R"; }
-did(){ [[ -f "$STATE" ]] && grep -qx "$1" "$STATE"; }
+# Not: --resume adım ATLAMAZ. Her adım kendi içinde yeniden çalıştırılabilir
+# (indirilmiş ağırlık tekrar inmez, kurulu paket atlanır, var olan kural dosyası
+# korunur) ve sonraki adımlar önceki adımların değişkenlerine bağlı olduğu için
+# atlamak zaten yanlış olurdu. --resume yalnız durum dosyasını sıfırlamaz.
 
 spin(){ local m="$1"; shift; local tmp; tmp=$(mktemp)
   ( "$@" >"$tmp" 2>&1 ) & local pid=$! mk='-\|/' i=0 t0=$(date +%s)
@@ -152,7 +156,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
-  -h|--help) sed -n '5,19p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
+  -h|--help) sed -n '5,22p' "$0" | sed 's/^# \?//; s/ *#$//'; exit 0 ;;
   *) echo "bilinmeyen: $1"; exit 1 ;; esac; shift; done
 
 if [[ "$MODE" == status ]]; then have spark && exec spark status || { echo "kurulum yok"; exit 1; }; fi
@@ -377,8 +381,78 @@ grep -q '^OH_SECRET_KEY=' "$ENVF" || echo "OH_SECRET_KEY=$(rnd 32)" >> "$ENVF"
 grep -q '^CANVAS_KEY='    "$ENVF" || echo "CANVAS_KEY=$(rnd 24)"    >> "$ENVF"
 chmod 600 "$ENVF"
 set -a; source "$ENVF"; set +a
+# ── Ortak sözleşme: kurallar vault'ta, roller ajanlarda ────────────────────
+#  Kuralların metni tek yerde (bilgi tabanında) durur. Skill ve rol dosyaları
+#  onun metnini KOPYALAMAZ, yerini gösterir — kopya eskir, tek kaynak eskimez.
+#  Böylece bir kuralı vault'ta değiştirdiğinde host'taki Claude Code da, Agent
+#  Canvas kabındaki ajan da aynı anda yeni kurala bağlanmış olur.
+KURALLAR="$VAULT_PATH/kurallar"
+if [[ -d "$SRC_DIR/roller" ]]; then
+  mkdir -p "$KURALLAR"
+  YENI=0
+  for f in "$SRC_DIR/roller/kurallar/"*.md; do
+    [[ -e "$f" ]] || continue
+    if [[ -f "$KURALLAR/$(basename "$f")" ]]; then continue; fi
+    cp "$f" "$KURALLAR/"; YENI=$((YENI+1))
+  done
+  if (( YENI )); then ok "kural taslakları bilgi tabanına kondu: $KURALLAR ($YENI dosya)"
+  else ok "kurallar zaten var, üzerine yazılmadı: $KURALLAR"; fi
+
+  # Skill: kuralların yerini söyler, metnini taşımaz
+  mkdir -p "$HOME/.claude/skills/sirket-kurallari"
+  sed "s|__KURALLAR__|$KURALLAR|g" "$SRC_DIR/roller/SKILL.md" \
+    > "$HOME/.claude/skills/sirket-kurallari/SKILL.md"
+  ok "skill: sirket-kurallari → $KURALLAR"
+
+  # ── Roller: aynı kaynak, iki hedef ──────────────────────────────────────
+  #  Host'taki Claude Code ile Agent Canvas rolleri aynı Markdown biçimini
+  #  okuyor (frontmatter + gövde = sistem istemi). Ayrışan tek şey iki alan:
+  #  kural yolu (host'ta ~/vault, kapta /vault) ve model adı (kapıda katman adı,
+  #  Canvas'ta litellm_proxy/<katman>). O yüzden tek dosyadan iki sürüm üretiyoruz.
+  mkdir -p "$HOME/.claude/agents"
+  CANVAS_AGENTS="$DATA/canvas/agents"
+  mkdir -p "$CANVAS_AGENTS"
+  ROL=0
+  for f in "$SRC_DIR/roller/agents/"*.md; do
+    [[ -e "$f" ]] || continue
+    # host: Claude Code katman adını doğrudan kullanır
+    sed -e "s|__KURALLAR__|$KURALLAR|g" \
+        -e "s|__MODEL_OPUS__|opus|g" -e "s|__MODEL_SONNET__|sonnet|g" \
+        "$f" > "$HOME/.claude/agents/$(basename "$f")"
+    # canvas: kapı üstünden litellm_proxy öneki, kural yolu kabın içindeki bağlama
+    sed -e "s|__KURALLAR__|/vault/kurallar|g" \
+        -e "s|__MODEL_OPUS__|litellm_proxy/opus|g" \
+        -e "s|__MODEL_SONNET__|litellm_proxy/sonnet|g" \
+        "$f" > "$CANVAS_AGENTS/$(basename "$f")"
+    ROL=$((ROL+1))
+  done
+  ok "$ROL rol kuruldu — host: ~/.claude/agents · Canvas: $CANVAS_AGENTS"
+  log "   Canvas her konuşmada bu dizini kendiliğinden tarar (~/.openhands/agents)"
+
+  # Kural skill'i Canvas tarafında da dursun (yönlendiren ajan için)
+  CSK="$DATA/canvas/skills/installed/sirket-kurallari"
+  mkdir -p "$CSK"
+  sed "s|__KURALLAR__|/vault/kurallar|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
+  ok "kural skill'i Canvas tarafına da yazıldı"
+
+  # Proje sözleşmesi: AGENTS.md'yi hem Claude Code hem Agent Canvas kendiliğinden
+  # okur ve tam metin sistem istemine koyar (SDK onu tetikleyicisiz bir skill'e
+  # çevirir). CLAUDE.md de tanınır ama model ailesi Anthropic değilse elenir;
+  # yerel modellerle çalıştığımız için sözleşme AGENTS.md adında duruyor.
+  PROJ="${CANVAS_PROJECTS:-$HOME/projects}"
+  mkdir -p "$PROJ"
+  if [[ -f "$PROJ/AGENTS.md" ]]; then
+    log "AGENTS.md zaten var, dokunulmadı: $PROJ/AGENTS.md"
+  else
+    cp "$SRC_DIR/roller/AGENTS.md" "$PROJ/AGENTS.md"
+    ok "proje sözleşmesi: $PROJ/AGENTS.md"
+  fi
+else
+  warn "roller/ klasörü bulunamadı — kurallar ve roller kurulmadı"
+fi
+
 sudo install -m0755 "$SRC_DIR/spark" /usr/local/bin/spark
-ok "$CDIR hazır · 'spark' komutu kuruldu"
+ok "$CDIR hazır · kurallar, roller ve 'spark' komutu kuruldu"
 send
 
 # ── 3 İMAJLAR ───────────────────────────────────────────────────────────────
@@ -704,72 +778,6 @@ else
     cp -r "$T/sp/skills/." "$HOME/.claude/skills/" && ok "$(ls "$T/sp/skills"|wc -l) skill kopyalandı"
   else warn "superpowers alınamadı — sonra: /plugin install superpowers@superpowers-marketplace"; fi
   sudo rm -rf "$T"
-fi
-# ── Ortak sözleşme: kurallar vault'ta, roller ajanlarda ────────────────────
-#  Kuralların metni tek yerde (bilgi tabanında) durur. Skill ve rol dosyaları
-#  onun metnini KOPYALAMAZ, yerini gösterir — kopya eskir, tek kaynak eskimez.
-#  Böylece bir kuralı vault'ta değiştirdiğinde host'taki Claude Code da, Agent
-#  Canvas kabındaki ajan da aynı anda yeni kurala bağlanmış olur.
-KURALLAR="$VAULT_PATH/kurallar"
-if [[ -d "$SRC_DIR/roller" ]]; then
-  mkdir -p "$KURALLAR"
-  YENI=0
-  for f in "$SRC_DIR/roller/kurallar/"*.md; do
-    [[ -e "$f" ]] || continue
-    if [[ -f "$KURALLAR/$(basename "$f")" ]]; then continue; fi
-    cp "$f" "$KURALLAR/"; YENI=$((YENI+1))
-  done
-  if (( YENI )); then ok "kural taslakları bilgi tabanına kondu: $KURALLAR ($YENI dosya)"
-  else ok "kurallar zaten var, üzerine yazılmadı: $KURALLAR"; fi
-
-  # Skill: kuralların yerini söyler, metnini taşımaz
-  mkdir -p "$HOME/.claude/skills/sirket-kurallari"
-  sed "s|__KURALLAR__|$KURALLAR|g" "$SRC_DIR/roller/SKILL.md" \
-    > "$HOME/.claude/skills/sirket-kurallari/SKILL.md"
-  ok "skill: sirket-kurallari → $KURALLAR"
-
-  # ── Roller: aynı kaynak, iki hedef ──────────────────────────────────────
-  #  Host'taki Claude Code ile Agent Canvas rolleri aynı Markdown biçimini
-  #  okuyor (frontmatter + gövde = sistem istemi). Ayrışan tek şey iki alan:
-  #  kural yolu (host'ta ~/vault, kapta /vault) ve model adı (kapıda katman adı,
-  #  Canvas'ta litellm_proxy/<katman>). O yüzden tek dosyadan iki sürüm üretiyoruz.
-  mkdir -p "$HOME/.claude/agents"
-  CANVAS_AGENTS="$DATA/canvas/agents"
-  mkdir -p "$CANVAS_AGENTS"
-  ROL=0
-  for f in "$SRC_DIR/roller/agents/"*.md; do
-    [[ -e "$f" ]] || continue
-    # host: Claude Code katman adını doğrudan kullanır
-    sed -e "s|__KURALLAR__|$KURALLAR|g" \
-        -e "s|__MODEL_OPUS__|opus|g" -e "s|__MODEL_SONNET__|sonnet|g" \
-        "$f" > "$HOME/.claude/agents/$(basename "$f")"
-    # canvas: kapı üstünden litellm_proxy öneki, kural yolu kabın içindeki bağlama
-    sed -e "s|__KURALLAR__|/vault/kurallar|g" \
-        -e "s|__MODEL_OPUS__|litellm_proxy/opus|g" \
-        -e "s|__MODEL_SONNET__|litellm_proxy/sonnet|g" \
-        "$f" > "$CANVAS_AGENTS/$(basename "$f")"
-    ROL=$((ROL+1))
-  done
-  ok "$ROL rol kuruldu — host: ~/.claude/agents · Canvas: $CANVAS_AGENTS"
-  log "   Canvas her konuşmada bu dizini kendiliğinden tarar (~/.openhands/agents)"
-
-  # Kural skill'i Canvas tarafında da dursun (yönlendiren ajan için)
-  CSK="$DATA/canvas/skills/installed/sirket-kurallari"
-  mkdir -p "$CSK"
-  sed "s|__KURALLAR__|/vault/kurallar|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
-  ok "kural skill'i Canvas tarafına da yazıldı"
-
-  # Proje notu: insan için sözleşme özeti (Canvas bunu OTOMATİK OKUMAZ)
-  PROJ="${CANVAS_PROJECTS:-$HOME/projects}"
-  mkdir -p "$PROJ"
-  if [[ -f "$PROJ/AGENTS.md" ]]; then
-    log "AGENTS.md zaten var, dokunulmadı: $PROJ/AGENTS.md"
-  else
-    cp "$SRC_DIR/roller/AGENTS.md" "$PROJ/AGENTS.md"
-    ok "proje notu: $PROJ/AGENTS.md"
-  fi
-else
-  warn "roller/ klasörü bulunamadı — kurallar ve roller kurulmadı"
 fi
 send
 
