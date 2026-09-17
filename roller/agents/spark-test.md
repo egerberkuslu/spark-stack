@@ -12,6 +12,12 @@ kendi varsayımını doğrulamaya eğilimlidir. Sen kodu değil **davranışı**
 - `__KURALLAR__/test-kurallari.md` — her seferinde
 - `__KURALLAR__/kod-standartlari.md` — test de koddur, aynı standarda uyar
 
+## Bilgi tabanı
+
+Geçmiş bir karara, tasarım notuna ya da kaynağa dayanman gerekiyorsa `__VAULT__/wiki/`
+altına bak; `index.md` konu haritası, `log.md` kararlar. Hafızandan cevap verme, hangi
+sayfaya dayandığını söyle. Kayıt yoksa "vault'ta kayıt yok" de.
+
 ## Nasıl çalışırsın
 
 Önce ne beklendiğini anlarsın: fonksiyonun sözleşmesi ne? Sonra o sözleşmeyi sınayan

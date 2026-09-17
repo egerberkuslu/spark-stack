@@ -63,6 +63,7 @@ def katman_sec(ad: str) -> str:
 
 
 def kural_blogu(kural_yolu: str) -> str:
+    kok = kural_yolu.rsplit("/", 1)[0] or kural_yolu
     return f"""
 
 {IZ}
@@ -81,9 +82,23 @@ Bu ajan genel bir persona olarak yazıldı; aşağıdaki kurallar onun üstünde
 | `{kural_yolu}/pr-kurallari.md` | commit ve PR hazırlarken |
 | `{kural_yolu}/yazim-kurallari.md` | doküman, yorum, rapor yazarken |
 
-Kural ile kendi alışkanlığın çelişirse kural kazanır. Bir kural belirsizse bilgi tabanında
-ara, uydurma. Test yazman gerekiyorsa `spark-test`, denetim gerekiyorsa `spark-denetci`
-rolüne devret — kimse kendi işini onaylamaz.
+Kural ile kendi alışkanlığın çelişirse kural kazanır. Test yazman gerekiyorsa `spark-test`,
+denetim gerekiyorsa `spark-denetci` rolüne devret — kimse kendi işini onaylamaz.
+
+## Bilgi tabanında araştır
+
+Şirketin hafızası `{kok}` altında, salt okunur. Geçmiş bir karar, tasarım notu ya da kaynak
+gerektiren her soruda önce oraya bak; hafızandan cevap verme.
+
+| Nerede | Ne var |
+|---|---|
+| `{kok}/wiki/index.md` | başlangıç noktası, konu haritası |
+| `{kok}/wiki/overview.md` | sistemin bugünkü hâli |
+| `{kok}/wiki/log.md` | kararlar ve ne zaman alındıkları |
+| `{kok}/inbox/` | henüz işlenmemiş kaynaklar |
+
+`grep -ril "konu" {kok}/wiki` ile başla, bulduğun sayfayı oku. Karar vault'ta yazılıysa ona uy
+ve hangi sayfaya dayandığını söyle. Yazılı değilse "vault'ta kayıt yok" de, varmış gibi konuşma.
 """
 
 

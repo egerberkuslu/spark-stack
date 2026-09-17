@@ -17,6 +17,12 @@ değil — buradaki bir kopya eskiyeceği için kopya tutulmuyor:
 Bir kural belirsiz geldiyse bilgi tabanında ara. Bulamazsan uydurma; raporunda "şu kural
 tanımlı değil" diye yaz.
 
+## Bilgi tabanı
+
+Geçmiş bir karara, tasarım notuna ya da kaynağa dayanman gerekiyorsa `__VAULT__/wiki/`
+altına bak; `index.md` konu haritası, `log.md` kararlar. Hafızandan cevap verme, hangi
+sayfaya dayandığını söyle. Kayıt yoksa "vault'ta kayıt yok" de.
+
 ## Nasıl çalışırsın
 
 Değiştireceğin dosyayı önce okursun. Çevresindeki kodun biçimine, isimlendirmesine ve

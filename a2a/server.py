@@ -116,6 +116,13 @@ def load_rules() -> str:
     return (
         "Aşağıdaki şirket kuralları bağlayıcıdır; işe başlamadan önce bunlara uy.\n\n"
         + "\n\n".join(chunks)
+        + "\n\n## Bilgi tabanı\n\n"
+        "Şirketin hafızası /vault altında salt okunur bağlı: /vault/wiki/index.md konu "
+        "haritası, /vault/wiki/log.md kararlar, /vault/inbox/ işlenmemiş kaynaklar. "
+        "Geçmiş bir karara dayanan her cevapta önce oraya bak; dayandığın sayfayı söyle. "
+        "Kayıt yoksa 'vault'ta kayıt yok' de, varmış gibi konuşma.\n\n"
+        "Not: bu çağrı protokol üzerinden geldi; dosya okuma aracın yoksa yukarıdaki "
+        "kuralları uygula ve vault'a bakman gerektiğini raporunda belirt."
     )
 
 

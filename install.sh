@@ -447,7 +447,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
 
   # Skill: kuralların yerini söyler, metnini taşımaz
   mkdir -p "$HOME/.claude/skills/sirket-kurallari"
-  sed "s|__KURALLAR__|$KURALLAR|g" "$SRC_DIR/roller/SKILL.md" \
+  sed -e "s|__KURALLAR__|$KURALLAR|g" -e "s|__VAULT__|$VAULT_PATH|g" "$SRC_DIR/roller/SKILL.md" \
     > "$HOME/.claude/skills/sirket-kurallari/SKILL.md"
   ok "skill: sirket-kurallari → $KURALLAR"
 
@@ -463,11 +463,11 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   for f in "$SRC_DIR/roller/agents/"*.md; do
     [[ -e "$f" ]] || continue
     # host: Claude Code katman adını doğrudan kullanır
-    sed -e "s|__KURALLAR__|$KURALLAR|g" \
+    sed -e "s|__KURALLAR__|$KURALLAR|g" -e "s|__VAULT__|$VAULT_PATH|g" \
         -e "s|__MODEL_OPUS__|opus|g" -e "s|__MODEL_SONNET__|sonnet|g" \
         "$f" > "$HOME/.claude/agents/$(basename "$f")"
     # canvas: kapı üstünden litellm_proxy öneki, kural yolu kabın içindeki bağlama
-    sed -e "s|__KURALLAR__|/vault/kurallar|g" \
+    sed -e "s|__KURALLAR__|/vault/kurallar|g" -e "s|__VAULT__|/vault|g" \
         -e "s|__MODEL_OPUS__|litellm_proxy/opus|g" \
         -e "s|__MODEL_SONNET__|litellm_proxy/sonnet|g" \
         "$f" > "$CANVAS_AGENTS/$(basename "$f")"
@@ -479,7 +479,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   # Kural skill'i Canvas tarafında da dursun (yönlendiren ajan için)
   CSK="$DATA/canvas/skills/installed/sirket-kurallari"
   mkdir -p "$CSK"
-  sed "s|__KURALLAR__|/vault/kurallar|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
+  sed -e "s|__KURALLAR__|/vault/kurallar|g" -e "s|__VAULT__|/vault|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
   ok "kural skill'i Canvas tarafına da yazıldı"
 
   # Proje sözleşmesi: AGENTS.md'yi hem Claude Code hem Agent Canvas kendiliğinden
@@ -491,7 +491,7 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   if [[ -f "$PROJ/AGENTS.md" ]]; then
     log "AGENTS.md zaten var, dokunulmadı: $PROJ/AGENTS.md"
   else
-    cp "$SRC_DIR/roller/AGENTS.md" "$PROJ/AGENTS.md"
+    sed -e "s|__VAULT__|/vault|g" "$SRC_DIR/roller/AGENTS.md" > "$PROJ/AGENTS.md"
     ok "proje sözleşmesi: $PROJ/AGENTS.md"
   fi
   # ── Katalogtan uzman roller (isteğe bağlı) ──────────────────────────────

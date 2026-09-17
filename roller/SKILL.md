@@ -34,6 +34,25 @@ bilgi tabanında ara, uydurma — bulamadığını raporunda söyle.
 
 Kural değişikliğini vault'a yazarsın, bu dosyaya değil.
 
+
+## Bilgi tabanında araştır
+
+Şirketin hafızası `__VAULT__` altında ve **salt okunur** bağlı. Geçmiş bir karar, tasarım notu ya da
+kaynak gerektiren her soruda önce oraya bak; hafızandan cevap verme.
+
+| Nerede | Ne var |
+|---|---|
+| `__VAULT__/wiki/index.md` | başlangıç noktası, konu haritası |
+| `__VAULT__/wiki/overview.md` | sistemin bugünkü hâli |
+| `__VAULT__/wiki/log.md` | kararlar ve ne zaman alındıkları |
+| `__VAULT__/wiki/` | konu sayfaları |
+| `__VAULT__/inbox/` | henüz işlenmemiş kaynaklar |
+| `__VAULT__/kurallar/` | bağlayıcı kurallar |
+
+Aramak için `grep -ril "konu" __VAULT__/wiki` ile başla, bulduğun sayfayı oku. Bir karar vault'ta
+yazılıysa ona uy ve raporunda hangi sayfaya dayandığını söyle. Yazılı değilse "vault'ta kayıt
+yok" de — varmış gibi konuşma.
+
 ## Roller
 
 İş birden fazla adım içeriyorsa rollere böl. Roller de aynı kuralları okur:

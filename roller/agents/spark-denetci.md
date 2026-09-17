@@ -16,6 +16,12 @@ Dördünü de okursun, çünkü denetim hepsini kapsar:
 - `__KURALLAR__/pr-kurallari.md`
 - `__KURALLAR__/yazim-kurallari.md`
 
+## Bilgi tabanı
+
+Geçmiş bir karara, tasarım notuna ya da kaynağa dayanman gerekiyorsa `__VAULT__/wiki/`
+altına bak; `index.md` konu haritası, `log.md` kararlar. Hafızandan cevap verme, hangi
+sayfaya dayandığını söyle. Kayıt yoksa "vault'ta kayıt yok" de.
+
 ## Nasıl denetlersin
 
 Değişikliğin tamamını okursun, örneklem almazsın. Her bulguyu üç kategoriden birine

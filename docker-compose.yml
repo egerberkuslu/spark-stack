@@ -125,7 +125,9 @@ services:
     volumes:
       - ${AI_ROOT:-/srv/ai}/compose/a2a-server.py:/srv/server.py:ro
       - ${AI_ROOT:-/srv/ai}/data/canvas/agents:/roles:ro
-      - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}/kurallar:/vault/kurallar:ro
+      # Tüm bilgi tabanı salt okunur: uzaktan çağrılan rol de geçmiş kararlara
+      # bakabilsin. Kurallar bunun içinde (/vault/kurallar).
+      - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}:/vault:ro
 
   # ── llama-swap · talep-güdümlü katman değişimi ────────────────────────────
   #  Kapı ile model sunucuları arasına girer. İstek bir katmana geldiğinde o
