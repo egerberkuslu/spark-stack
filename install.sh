@@ -14,7 +14,8 @@
 #    --token hf_xxx      HuggingFace anahtarını komutla ver                   #
 #    --with-fable        dördüncü katman (en yüksek kalite)                   #
 #    --with-extras       Open WebUI + Qdrant + Whisper                        #
-#    --with-wiki         Obsidian + claude-obsidian bilgi tabanı              #
+#    --with-wiki         bilgi tabanı (varsayılan motor: obsidian)            #
+#    --bilgi MOTOR       obsidian (kaynak→wiki) | graphify (kod→graf)         #
 #    --with-nemoclaw     NVIDIA NemoClaw ajan kabı (--all dahil)              #
 #    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
 #    --with-canvas       Agent Canvas ajan kontrol merkezi (--all dahil)      #
@@ -40,6 +41,10 @@ MODELS="$AI_ROOT/models"; DATA="$AI_ROOT/data"; CDIR="$AI_ROOT/compose"
 STATE="$DATA/.state"; LOGFILE="$AI_ROOT/install.log"
 ENVF="$CDIR/.env"
 WITH_FABLE=0; WITH_EXTRAS=0; WITH_WIKI=0; WITH_NEMOCLAW=0; WITH_SWAP=0; WITH_CANVAS=0; WITH_A2A=0
+# Bilgi tabanı motoru: iki farklı soruyu yanıtlarlar, biri seçilir.
+#   obsidian  kaynak at → alıntılı wiki (claude-obsidian); insan kapılı, kaynak izi tutar
+#   graphify  kod ve belge → sorgulanabilir graf; tree-sitter ile yerel ve deterministik
+BILGI="${BILGI:-obsidian}"
 WITH_AGENCY=0
 RESUME=0; MODE=install; DEMO=0
 TIERS=(haiku sonnet opus)          # varsayılan kurulum katmanları
@@ -173,6 +178,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --projects) shift; CANVAS_PROJECTS="${1:-}" ;; --projects=*) CANVAS_PROJECTS="${1#--projects=}" ;;
   --sandbox) shift; NEMOCLAW_SANDBOX="${1:-spark}" ;; --sandbox=*) NEMOCLAW_SANDBOX="${1#--sandbox=}" ;;
   --with-wiki) WITH_WIKI=1 ;; --vault) shift; OBSIDIAN_VAULT="${1:-}"; WITH_WIKI=1 ;;
+  --bilgi) shift; BILGI="${1:-obsidian}"; WITH_WIKI=1 ;;
+  --bilgi=*) BILGI="${1#--bilgi=}"; WITH_WIKI=1 ;;
+  --with-graphify) BILGI=graphify; WITH_WIKI=1 ;;
   --vault=*) OBSIDIAN_VAULT="${1#--vault=}"; WITH_WIKI=1 ;;
   --resume) RESUME=1 ;; --token) shift; HF_TOKEN="${1:-}" ;; --token=*) HF_TOKEN="${1#--token=}" ;;
   --status) MODE=status ;; --uninstall) MODE=uninstall ;;
@@ -198,7 +206,7 @@ if [[ "$MODE" == uninstall ]]; then
   # şeyler, kurulumun ürettiği dosya değil.
   for r in spark-kod spark-test spark-denetci; do rm -f "$HOME/.claude/agents/$r.md"; done
   rm -f "$HOME/.claude/agents"/ajans-*.md
-  rm -rf "$HOME/.claude/skills/sirket-kurallari"
+  rm -rf "$HOME/.claude/skills/sirket-kurallari" "$HOME/.claude/skills/graphify"
   echo "  roller ve sirket-kurallari skill'i kaldırıldı"
   [[ "$(git config --global core.hooksPath 2>/dev/null)" == "$AI_ROOT/denetim/hooks" ]] && git config --global --unset core.hooksPath
   sudo rm -rf "$AI_ROOT"; sudo rm -f /usr/local/bin/spark /usr/local/bin/wiki
@@ -213,6 +221,7 @@ if [[ "$MODE" == uninstall ]]; then
   exit 0
 fi
 
+case "$BILGI" in obsidian|graphify) ;; *) die "bilinmeyen bilgi tabanı motoru: $BILGI  (obsidian|graphify)" ;; esac
 (( WITH_FABLE )) && STEP_WEIGHT[4]=90
 (( DEMO ))       && STEP_WEIGHT[4]=25
 for w in "${STEP_WEIGHT[@]}"; do TOTAL_WEIGHT=$((TOTAL_WEIGHT+w)); done
@@ -235,7 +244,9 @@ $( ((DEMO)) && echo "    ${D}opus    (demo modunda atlandı, sonra: spark pull o
 $( ((WITH_FABLE)) && echo "    ${B}fable${R}   ~67 GB  :8001   Nemotron-3-Super-120B    ${D}NVIDIA ağır · tek başına${R}" )
     ${B}kapı${R}     LiteLLM                   tek API adresi            :4000
 $( ((WITH_EXTRAS)) && echo "    ${B}ekstra${R}   Open WebUI + Qdrant + Whisper                       :3000" )
-$( ((WITH_WIKI))   && echo "    ${B}vault${R}    Obsidian + claude-obsidian (15 skill)" )
+$( ((WITH_WIKI))   && { [[ "$BILGI" == graphify ]] \
+     && echo "    ${B}graf${R}     graphify: kod ve belge → sorgulanabilir bilgi grafı" \
+     || echo "    ${B}vault${R}    Obsidian + claude-obsidian (15 skill)"; } )
 $( ((WITH_SWAP))   && echo "    ${B}swap${R}     llama-swap: katmanı istek anında açar, boştayı düşürür" )
 $( ((WITH_CANVAS)) && echo "    ${B}canvas${R}   Agent Canvas: ajan kontrol merkezi + otomasyonlar    :8300" )
 $( ((WITH_A2A))    && echo "    ${B}a2a${R}      A2A köprüsü: roller protokolle adreslenebilir       :8400" )
@@ -1104,9 +1115,88 @@ send
 #  Kaynak at → Claude okur, bağlar, Obsidian vault'una kaydeder. Kanıt/alıntı
 #  takibi yapar, BM25 ile arar (embedding gerekmez), düz Markdown bırakır.
 #  Kod yazarken notlarına bakabilmen için: /claude-obsidian:wiki-query
-sbegin 10 $(( WITH_WIKI ? 6 : 0 ))
+BILGI_IS=0; (( WITH_WIKI )) && { [[ "$BILGI" == graphify ]] && BILGI_IS=4 || BILGI_IS=6; }
+# ── graphify motoru ────────────────────────────────────────────────────────
+#  Obsidian motoru kaynaktan alıntılı wiki üretir; graphify kod ve belgeden
+#  sorgulanabilir bir graf çıkarır. Kod ayrıştırma tree-sitter ile yapılır:
+#  yerel, deterministik, modele gitmez. Yalnız belge/PDF taraması bir modele
+#  ihtiyaç duyar, onu da kendi kapımıza bağlıyoruz.
+#
+#  Kendi sanal ortamı var: sistem python'una dokunmuyoruz ve graphify'ın
+#  belgelerindeki "pip ile kurma, yorumlayıcı karışır" uyarısı da böylece
+#  aşılıyor (venv, pipx'in yaptığı yalıtımın aynısı).
+graphify_kur(){
+  local GDIR="$AI_ROOT/graphify" GPY GBIN
+  is "graphify paketi (kendi sanal ortamında)"
+  if [[ ! -x "$GDIR/.venv/bin/graphify" ]]; then
+    python3 -m venv "$GDIR/.venv" || { warn "graphify sanal ortamı kurulamadı"; return 1; }
+    "$GDIR/.venv/bin/pip" install -q --upgrade pip >>"$LOGFILE" 2>&1
+    spin "graphifyy indiriliyor (tree-sitter dilbilgileri dahil)" \
+      "$GDIR/.venv/bin/pip" install -q "graphifyy[pdf,mcp,anthropic]" \
+      || { warn "graphify kurulamadı, log: $LOGFILE"; return 1; }
+  fi
+  GBIN="$GDIR/.venv/bin/graphify"; GPY="$GDIR/.venv/bin/python"
+  ok "$("$GBIN" --version 2>/dev/null | head -1 || echo graphify)  ·  $GDIR"
+
+  is "Claude Code skill kaydı"
+  # Kayıt ~/.claude/skills/graphify altına yazılır; ortak skill dizini onu
+  # zaten topluyor, yani Canvas tarafı da skill metnini görüyor.
+  if (cd "$HOME" && PATH="$GDIR/.venv/bin:$PATH" "$GBIN" install) >>"$LOGFILE" 2>&1; then
+    ok "skill kuruldu: ~/.claude/skills/graphify  ·  kullanım: /graphify ."
+  else
+    warn "skill kaydı yapılamadı, elle: $GBIN install"
+  fi
+
+  is "kapıya bağlama ve wiki komutu"
+  # Belge/PDF taraması için model: Anthropic uyumlu uç olarak kendi kapımız.
+  # Kod ayrıştırma bu ayardan bağımsız, zaten modelsiz çalışıyor.
+  sed -i '/^GRAPHIFY_/d' "$ENVF"
+  { echo "GRAPHIFY_BIN=$GBIN"
+    echo "GRAPHIFY_BACKEND=claude"; } >> "$ENVF"
+  sudo tee /usr/local/bin/wiki >/dev/null <<WEOF
+#!/usr/bin/env bash
+# wiki: bilgi grafına sor (motor: graphify)
+#   wiki                 bulunduğun projenin grafını kur ya da tazele
+#   wiki "soru"          grafa soru sor
+#   wiki yol A B         iki şey arasındaki bağlantıyı izle
+#   wiki anlat X         tek bir kavramı açıkla
+# Graf projenin içinde durur: ./graphify-out/  (depoya girmesi tasarım gereği)
+# Anahtar .env'den okunur: kurulum sırasında değil, çalışma anında geçerli olanı
+set -a; [[ -f "$CDIR/.env" ]] && . "$CDIR/.env"; set +a
+export ANTHROPIC_BASE_URL="http://localhost:4000"
+export ANTHROPIC_API_KEY="\${KEY_INSAN:-\${LITELLM_KEY:-sk-spark}}"
+export ANTHROPIC_AUTH_TOKEN="\$ANTHROPIC_API_KEY"
+G="$GBIN"
+case "\${1:-}" in
+  "")      # iki aşama: AST çıkarımı (modelsiz) + kümeleme ve rapor
+           "\$G" . --backend claude || exit 1
+           exec "\$G" cluster-only . --backend claude ;;
+  yol)     shift; exec "\$G" path "\$@" ;;
+  anlat)   shift; exec "\$G" explain "\$@" ;;
+  *)       exec "\$G" query "\$*" ;;
+esac
+WEOF
+  sudo chmod +x /usr/local/bin/wiki
+  ok "'wiki' komutu kuruldu (graphify motoru)"
+
+  is "ortak skill dizini"
+  if bash "$SRC_DIR/roller/skill-birlestir.sh" "$DATA/canvas/agents-skills" \
+       "$KURALLAR" "" "$HOME/.claude/skills" >>"$LOGFILE" 2>&1; then
+    ok "ortak skill dizini derlendi: $(find "$DATA/canvas/agents-skills" -maxdepth 1 -mindepth 1 | wc -l) girdi"
+  else
+    warn "ortak skill dizini derlenemedi"
+  fi
+  log "kullanım:  wiki  ·  wiki \"soru\"  ·  wiki yol A B  ·  graf: <proje>/graphify-out/"
+  log "   Canvas tarafı grafın çıktısını /projects/<proje>/graphify-out/ altından okur"
+  log "   sorgu ucunu kaba açmak istersen:  $GPY -m graphify.serve <proje>/graphify-out/graph.json \\"
+  log "     --transport http --host 0.0.0.0 --port 8500 --api-key \"\$LITELLM_KEY\""
+}
+
+sbegin 10 "$BILGI_IS"
 if (( WITH_WIKI == 0 )); then
-  log "atlandı, sonradan:  bash install.sh --with-wiki --resume"
+  log "atlandı, sonradan:  bash install.sh --with-wiki --resume  (motor: --bilgi obsidian|graphify)"
+elif [[ "$BILGI" == graphify ]]; then
+  graphify_kur
 else
   PYV="$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo 0)"
   if [[ "$(printf '%s\n3.11\n' "$PYV" | sort -V | head -1)" != "3.11" ]]; then
@@ -1367,6 +1457,11 @@ if (( WITH_CANVAS )); then
   SKD="$DATA/canvas/agents-skills"
   SKN=$(find "$SKD" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
   WQ=$([[ -f "$SKD/wiki-query/SKILL.md" ]] && echo var || echo yok)
+  if [[ "$BILGI" == graphify ]]; then
+    [[ -x "$AI_ROOT/graphify/.venv/bin/graphify" ]] \
+      && v_ok "bilgi tabanı: graphify $("$AI_ROOT/graphify/.venv/bin/graphify" --version 2>/dev/null | head -1)" \
+      || v_no "graphify kurulu değil: bash install.sh --bilgi graphify --resume"
+  fi
   if (( SKN )); then v_ok "ortak skill dizini: $SKN girdi · wiki-query $WQ"
   else v_no "ortak skill dizini boş: Canvas host'takı skill'leri görmez"; fi
 fi

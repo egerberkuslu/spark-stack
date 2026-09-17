@@ -428,12 +428,98 @@ Kapı varsayılan olarak yalnızca yerel makineden erişilebilir. Ağa açmak i�
 
 ```
 GATEWAY_BIND=0.0.0.0
-LITELLM_KEY=<uzun-bir-anahtar>
 ```
 
-`spark up daily` ile yeniden başlatılır. İstemci tarafında: OpenAI uyumlu uç `http://<spark-ip>:4000/v1`, model adı `opus`. Claude Code için `ANTHROPIC_BASE_URL=http://<spark-ip>:4000`.
+`spark up daily` ile yeniden başlatılır. Ofis dışı erişim için Tailscale önerilir, çünkü port
+açmayı ve sabit IP'yi gerektirmez.
 
-Ofis dışı erişim için Tailscale önerilir, çünkü port açmayı ve sabit IP'yi gerektirmez.
+**Herkese ana anahtarı verme.** Kapının veritabanı var, yani her kişi kendi anahtarıyla bağlanır;
+kim ne harcadı görürsün, biri döngüye girerse yalnız onun bütçesi biter. Spark'ta bir kez:
+
+```bash
+curl -s -X POST http://127.0.0.1:4000/key/generate \
+  -H "Authorization: Bearer $LITELLM_KEY" -H 'Content-Type: application/json' \
+  -d '{"key_alias":"ayse","models":["haiku","sonnet","opus","claude-*"],
+       "max_budget":40,"budget_duration":"1d","rpm_limit":120}' | jq -r .key
+```
+
+Dönen `sk-…` değeri o kişinin anahtarıdır. `fable` listede yok: açıldığında diğer üç katmanı
+düşürdüğü için ekip anahtarlarında bulunmaz, o katman makinenin başındaki insanın kararıdır.
+Harcamayı `spark anahtarlar` ile ya da `/key/info` ucundan izlersin.
+
+### Ekip üyesinin settings.json dosyası
+
+Claude Code ayarları `~/.claude/settings.json` içindedir. Ekip üyesi şunu yazar, başka hiçbir şey
+kurmasına gerek kalmaz:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://spark.local:4000",
+    "ANTHROPIC_AUTH_TOKEN": "sk-ayse-kendi-anahtari",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "opus",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "sonnet",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "haiku",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "model": "opus",
+  "availableModels": ["opus", "sonnet", "haiku"],
+  "enforceAvailableModels": true,
+  "fallbackModel": ["sonnet", "haiku"]
+}
+```
+
+Satır satır ne yaptığı:
+
+| Anahtar | Ne yapar |
+|---|---|
+| `ANTHROPIC_BASE_URL` | Bütün istekleri Spark'taki kapıya yollar. Bulut ucu hiç kullanılmaz. |
+| `ANTHROPIC_AUTH_TOKEN` | `Authorization: Bearer` başlığına konur. Kişiye özel anahtar burada durur. |
+| `ANTHROPIC_DEFAULT_*_MODEL` | **Model eşleşmesi budur.** `/model opus` yazıldığında hangi gerçek model adının kapıya gideceğini söyler; bizde takma ad ile katman adı aynı olduğu için eşleşme birebirdir. |
+| `model` | Yeni oturumun hangi katmanla başlayacağı. |
+| `availableModels` + `enforceAvailableModels` | Model seçiciyi bu üçe kilitler; kimse yanlışlıkla `fable` ya da bir bulut modeli seçemez. |
+| `fallbackModel` | Ana katman meşgulse sırayla denenecek katmanlar. |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | Zorunlu olmayan dış istekleri kapatır. |
+
+`ANTHROPIC_API_KEY` yerine `ANTHROPIC_AUTH_TOKEN` kullanıyoruz: ilki `X-Api-Key` başlığına gider,
+LiteLLM ise `Bearer` bekler. İkisini birden yazmak gerekmez.
+
+Kabuktan verilen `ANTHROPIC_MODEL` dosyadaki `model` anahtarını ezer, yani bir kişi tek oturumluk
+`ANTHROPIC_MODEL=haiku claude` diyebilir. Kalıcı değişiklik dosyada yapılır.
+
+### Ayar dosyaları hangi sırayla okunur
+
+| Dosya | Kim için | Depoya girer mi |
+|---|---|---|
+| kurumsal yönetilen ayarlar | tüm şirket | ilgisiz |
+| `.claude/settings.local.json` | o kişi, o proje | hayır |
+| `.claude/settings.json` | projedeki herkes | **evet** |
+| `~/.claude/settings.json` | o kişi, tüm projeler | hayır |
+
+Üstteki alttakini ezer. Pratikte: kişisel anahtar ve kapı adresi `~/.claude/settings.json` içinde
+durur, projeye özel model kilidi ve izinler depoya giren `.claude/settings.json` içinde. Anahtarı
+depoya giren dosyaya yazma; kural kapısı zaten `sk-` ile başlayan bir dizgiyi commit'te yakalar.
+
+Projeye koyacağın ortak dosya şuna benzer, anahtar içermez:
+
+```json
+{
+  "model": "opus",
+  "availableModels": ["opus", "sonnet", "haiku"],
+  "enforceAvailableModels": true,
+  "permissions": {
+    "allow": ["Bash(spark kural pr)", "Bash(pytest -q)"]
+  }
+}
+```
+
+Bağlantıyı doğrulamak için:
+
+```bash
+curl -s http://spark.local:4000/v1/models -H "Authorization: Bearer $ANAHTAR" | jq -r '.data[].id'
+```
+
+Dört katman adını göremiyorsan ya kapı ağa açık değildir ya da anahtar o modelleri kapsamıyordur.
 
 ---
 
@@ -597,6 +683,71 @@ nemoclaw spark policy list      # ağ politikası kuralları
 ```
 
 İki dürüst not. Bu, projenin "makineye tek şey kurulur" kuralından tek sapmadır: NemoClaw kendi CLI'sini host'a bırakır (Node.js ≥22.19 + `~/.local/bin/nemoclaw`), çünkü dağıtım biçimi bu; ajanın kendisi, gateway ve kap yine konteynerde. İkincisi, Anthropic uyumlu yol da mevcut ama OpenClaw o yolda akışta native `tool_use`/`emit_ok` doğrulaması arıyor; yerel modellerde kırılgan olduğu için OpenAI uyumlu yol seçildi.
+
+---
+
+## Bilgi tabanı: iki motordan biri
+
+Kurulum bilgi tabanı için iki motordan birini kurar ve seçim `--bilgi` ile yapılır. İkisi aynı
+işi yapmaz, aynı soruyu da yanıtlamaz; hangisini istediğini bilerek seçmelisin.
+
+```bash
+bash install.sh --all                       # varsayılan: obsidian
+bash install.sh --all --bilgi graphify      # graphify
+```
+
+| | `obsidian` (varsayılan) | `graphify` |
+|---|---|---|
+| Girdi | attığın kaynaklar: dosya, URL, konuşmadaki karar | kod tabanının kendisi, yanındaki belgeler ve PDF'ler |
+| Çıktı | alıntılı wiki sayfaları, değişmez kaynak arşivi | `graph.json`, `GRAPH_REPORT.md`, gezilebilir `graph.html` |
+| Yanıtladığı soru | "bu kararı neden almıştık, kaynağı ne" | "auth ile veritabanını ne bağlıyor" |
+| Yazma | insan kapılı, iki aşamalı onay | komutla yeniden üretilir, gerektiğinde tazelenir |
+| Model gerekir mi | evet, sorgu ve işleme için | **kod için hayır**, tree-sitter ile deterministik; yalnız belge ve PDF taraması modele gider |
+| Nerede durur | `~/vault` (tek, global) | her projenin içinde `graphify-out/` |
+| Kapsam | şirketin hafızası | o projenin haritası |
+
+Kısaca: obsidian **neden** sorusunu, graphify **nasıl bağlı** sorusunu yanıtlıyor. Aynı anda
+ikisi kurulmaz; fikrini değiştirirsen `bash install.sh --bilgi <motor> --resume` ile diğerine
+geçersin.
+
+Motor hangisi olursa olsun sözleşme aynı: tek bir `wiki` komutu, ortak skill dizinine giren
+beceriler, Canvas tarafının aynı içeriği görmesi ve rollerin bilgi tabanına başvurması.
+
+```bash
+wiki                        # obsidian: vault'ta Claude Code aç · graphify: grafı kur/tazele
+wiki "auth kararı neydi?"   # ikisinde de: bilgi tabanına sor
+wiki yol UserService DatabasePool   # yalnız graphify: iki şey arasındaki bağlantı
+```
+
+### graphify seçildiğinde
+
+`graphifyy` (Apache-2.0) kendi sanal ortamına kurulur, sistem Python'una dokunulmaz. Kod
+ayrıştırma tree-sitter ile yapılır: yerel, deterministik, hiçbir şey makineden çıkmaz. Belge ve
+PDF taraması bir modele ihtiyaç duyar, o da bizim kapımıza bağlanır
+(`ANTHROPIC_BASE_URL=http://localhost:4000`), yani bu yolda da bulut yok.
+
+`wiki` iki aşama koşar: önce AST çıkarımı, sonra kümeleme ve rapor. Birincisi tamamen modelsiz.
+İkincisi grafı, `GRAPH_REPORT.md` dosyasını ve gezilebilir `graph.html` sayfasını üretir; modele
+yalnızca toplulukları adlandırmak için gider ve model yoksa küme adları yerine merkez düğüm
+adlarını kullanır, yani rapor yine çıkar.
+
+Graf projenin içinde `graphify-out/` altında durur ve depoya girmesi tasarım gereğidir: ekipteki
+herkes aynı haritayla başlar. Canvas kabındaki ajan projeyi zaten `/projects` altında gördüğü
+için bu dosyaları doğrudan okuyabilir. Sorgu komutunu kapta da istersen graphify kendi MCP
+sunucusunu HTTP üzerinden veriyor ve Canvas uzak MCP'yi destekliyor:
+
+```bash
+/srv/ai/graphify/.venv/bin/python -m graphify.serve <proje>/graphify-out/graph.json \
+  --transport http --host 0.0.0.0 --port 8500 --api-key "$LITELLM_KEY"
+```
+
+Bu kurulum tarafından otomatik başlatılmaz; isteyen elle açar.
+
+Doğrulananlar: paket kuruldu (18 saniye, aarch64 wheel'leri mevcut), üç dosyalık bir Python
+projesinden 9 düğüm ve 13 kenar çıkarıldı, `query` ve `path` hiçbir model olmadan doğru cevap
+verdi, `cluster-only` modelsiz de rapor üretti, ve graphify bizim kapımızı Anthropic uyumlu uç
+olarak kabul edip istek gönderdi. Doğrulanmayan tek şey topluluk adlarının yerel modellerle ne
+kadar iyi çıktığı; bunu ancak Spark'ta gerçek modellerle görebiliriz.
 
 ---
 

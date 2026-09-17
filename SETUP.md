@@ -369,6 +369,31 @@ Kap adını değiştirmek için `--sandbox <ad>`. Kurulum host'a yalnızca `nemo
 
 ---
 
+## Bilgi tabanı motoru seçmek
+
+Kurulum iki motordan birini kurar; `--bilgi` ile seçilir, varsayılan `obsidian`.
+
+```bash
+bash install.sh --all                      # obsidian: kaynak at → alıntılı wiki
+bash install.sh --all --bilgi graphify     # graphify: kod ve belge → sorgulanabilir graf
+bash install.sh --bilgi graphify --resume  # sonradan diğerine geçmek
+```
+
+Hangisi kurulu olursa olsun komut aynı:
+
+```bash
+wiki                              # obsidian: vault'u aç · graphify: grafı kur ve tazele
+wiki "auth kararı neydi?"         # bilgi tabanına sor
+wiki yol UserService DatabasePool # yalnız graphify: iki şey arasındaki bağlantı
+wiki anlat RateLimiter            # yalnız graphify: tek kavramı açıkla
+```
+
+graphify seçildiğinde paket `/srv/ai/graphify/.venv` altına kurulur ve `.env` içine
+`GRAPHIFY_BIN` ile `GRAPHIFY_BACKEND` yazılır. Kod ayrıştırma tree-sitter ile yerel ve
+modelsizdir; topluluk adlandırması ve belge taraması kapıya (`localhost:4000`) gider.
+Model erişilemezse rapor yine üretilir, yalnız küme adları merkez düğüm adlarına düşer.
+Graf her projenin içinde `graphify-out/` altında oluşur ve depoya girmesi beklenir.
+
 ## Obsidian + bilgi tabanı
 
 `--with-wiki` (veya `--all`) ile kurulur:
