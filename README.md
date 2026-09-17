@@ -94,7 +94,7 @@ bash install.sh --all --token hf_xxx    # dört katman + eklentiler ~132 GB    5
 | `--with-swap` | llama-swap: katmanı istek anında aç (`--all` içinde) |
 | `--with-canvas` | Agent Canvas ajan kontrol merkezi (`--all` içinde) |
 | `--with-a2a` | A2A köprüsü: rolleri protokolle aç (`--all` içinde) |
-| `--with-agency` | agency-agents kataloğundan 15 uzman rol (`--all` içinde **değil**) |
+| `--with-agency` | agency-agents kataloğu + 15 uzman rol (`--all` içinde) |
 | `--projects PATH` | Canvas ajanının göreceği klasör (varsayılan `~/projects`) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--resume` | Yarım kalan kurulumu sürdür |
@@ -127,7 +127,8 @@ spark status                # servis durumu, bellek, disk
 spark swap                  # llama-swap: hangi katman ayakta
 spark canvas                # Agent Canvas adresi ve ayarları
 spark a2a                   # A2A köprüsü: kart ve roller
-spark agents --liste        # katalogdaki uzman roller
+spark agents --kurulu       # kurulu uzman roller
+spark agents                # ekle/çıkar (etkileşimli)
 spark up canvas             # kontrol merkezini aç
 spark up swap               # llama-swap düzenini aç
 spark up demo               # haiku + sonnet
@@ -334,22 +335,34 @@ kataloğundan seçilmiş 15 uzman rol çekilir: backend/frontend/yazılım mimar
 iyileştirici, DevOps, SRE, olay müdahale, git akışı, teknik yazar, en-az-değişiklik mühendisi,
 kod tabanına giriş, API platformu, ürün yöneticisi, sprint önceliklendirici, toplantı notu.
 
+Kataloğun **kendisi** `/srv/ai/agency-agents` altına kurulur; `spark agents` onun resmî
+kurucusunu sarar, yani listeleme, etkileşimli seçici ve bütün seçim bayrakları elinde kalır.
+
 ```bash
-spark agents --liste       # katalogdaki bütün ajanlar
-spark agents --onerilen    # seçilmiş seti (yeniden) kur
-spark agents engineering/engineering-rust-refactoring-specialist --model opus
+spark agents                    # etkileşimli seçici (ekle/çıkar)
+spark agents --liste            # katalogdaki bütün ajanlar
+spark agents --kurulu           # sistemde hangileri var, hangi katmanda
+spark agents --ekle rust-refactoring-specialist
+spark agents --sil  rust-refactoring
+spark agents --onerilen         # seçilmiş 15'i (yeniden) kur
 ```
 
-İçe aktarıcı üç şeyi uyarlar: adı slug'a çevirir, katman adını ekler (host'ta `opus`, Canvas'ta
-`litellm_proxy/opus`), ve gövdeye şirket kurallarını bağlar — yoksa çekilen persona bizim
-kurallarımızı okumaz. Adlar `ajans-` önekiyle gelir, kendi rollerimizle karışmaz.
+Her eklemeden sonra uyarlayıcı kendiliğinden çalışır ve üç şeyi ekler: adı slug'a çevirir,
+katman adını yazar (host'ta `opus`, Canvas'ta `litellm_proxy/opus`), gövdeye şirket kurallarını
+bağlar — yoksa çekilen persona bizim kurallarımızı okumaz. Ayrıca Canvas kopyasını üretir.
+Uyarlanmış dosyaya ikinci kez dokunulmaz, tekrar tekrar çalıştırılabilir.
+
+Katman seçimi ajanın işine göre: mimari ve kod yazanlar `opus`, işletme ve olay müdahale
+`sonnet`, özet çıkaranlar `haiku`. Adlar `ajans-` önekli, kendi rollerimizle karışmaz.
 
 Kendi rollerimizle çakışanlar (kod yazan, test eden, denetleyen) bilerek dışarıda: onlar bizim
 kurallarımıza göre yazıldı, genel bir persona onların yerini almamalı.
 
-`agency-agents-app` masaüstü uygulamasına gerek yok. O uygulamanın Claude Code biçimi
-`identity`, yani dosyayı olduğu gibi kopyalıyor — aynı işi `spark agents` yapıyor. Zaten Linux
-ikilileri amd64; Spark aarch64 olduğu için kurulamazdı.
+**Masaüstü uygulaması (`agency-agents-app`) kurulmuyor, iki sebeple.** Linux ikilileri yalnız
+amd64 — `aarch64` varlıkları macOS, `arm64-setup.exe` Windows; Spark aarch64 Linux olduğu için
+eşleşen ikili yok. Ve zaten gerek de yok: o uygulamanın `tools.json` dosyasında Claude Code
+biçimi `identity` olarak tanımlı, yani dosyayı hiç dönüştürmeden kopyalıyor. Sardığımız
+`scripts/install.sh` ile aynı işi, üstelik başsız ve bizim kurallarımıza bağlayarak yapıyoruz.
 
 Kuralları düzenlemek için dosyaları doğrudan aç, ya da `wiki` komutuyla bilgi tabanında çalış.
 
@@ -476,7 +489,7 @@ Temel kurulum oturduktan sonra değerlendirilebilecek bileşenler:
 | LiteLLM | `ghcr.io/berriai/litellm` |
 | llama-swap | `ghcr.io/mostlygeek/llama-swap` (`unified-cuda13`, arm64) |
 | Agent Canvas | `ghcr.io/openhands/agent-canvas` (`1.19.0`, arm64) |
-| Uzman roller | `msitarzewski/agency-agents` (MIT) — `--with-agency` |
+| Uzman roller | `msitarzewski/agency-agents` (MIT) — katalog + resmî kurucusu |
 | MCP sunucuları | `mcp/*` Docker kataloğu |
 | Skill kütüphanesi | `obra/superpowers` |
 | Bilgi tabanı | `AgriciDaniel/claude-obsidian` |

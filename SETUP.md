@@ -251,17 +251,26 @@ curl localhost:8400/agents/spark-kod/a2a/v1 ...       → protokolle
 
 Canvas'ta rol listesi konuşma başında kendiliğinden yüklenir, ayrı bir seçim adımı yoktur.
 
-`--with-agency` ile [agency-agents](https://github.com/msitarzewski/agency-agents) (MIT)
-kataloğundan 15 uzman rol gelir (`ajans-` önekiyle):
+`--all` (ya da `--with-agency`) [agency-agents](https://github.com/msitarzewski/agency-agents)
+(MIT) kataloğunun **kendisini** `/srv/ai/agency-agents` altına kurar ve seçilmiş 15 uzman rolü
+`ajans-` önekiyle yerleştirir. Sonrasında ekleme/çıkarma senin elinde:
 
 ```bash
-spark agents --liste                 # katalogdaki bütün ajanlar
-spark agents --onerilen              # seçilmiş seti kur
-spark agents engineering/engineering-sre --model sonnet
+spark agents                    # etkileşimli seçici
+spark agents --liste            # katalogdaki bütün ajanlar (90+)
+spark agents --kurulu           # sistemde hangileri var, hangi katmanda
+spark agents --ekle sre-site-reliability-engineer
+spark agents --sil  sre-site
+spark agents --onerilen         # seçilmiş 15'i yeniden kur
 ```
 
-İçe aktarıcı adı slug'a çevirir, katman adını ekler ve gövdeye şirket kurallarını bağlar.
-Kendi rollerimizle çakışanlar (kod/test/denetim) bilerek dışarıda.
+`spark agents` kataloğun resmî kurucusunu (`scripts/install.sh`) sarar, yani listeleme,
+etkileşimli seçici ve bütün seçim bayrakları elinde kalır. Her eklemeden sonra uyarlayıcı
+kendiliğinden çalışır: adı slug'a çevirir, katman adını yazar, gövdeye şirket kurallarını
+bağlar ve Canvas kopyasını üretir.
+
+Katman seçimi işe göre: mimari/kod `opus`, işletme/olay `sonnet`, özet `haiku`. Kendi
+rollerimizle çakışanlar (kod/test/denetim) bilerek dışarıda; `spark-*` rolleri silinmez.
 
 ---
 

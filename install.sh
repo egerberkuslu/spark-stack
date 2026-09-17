@@ -19,7 +19,7 @@
 #    --with-swap         llama-swap: katmanı istek anında aç (--all dahil)    #
 #    --with-canvas       Agent Canvas ajan kontrol merkezi (--all dahil)      #
 #    --with-a2a          A2A köprüsü: rolleri protokolle aç (--all dahil)     #
-#    --with-agency       agency-agents kataloğundan 15 uzman rol (--all DEĞİL)#
+#    --with-agency       agency-agents kataloğu + 15 uzman rol (--all dahil)  #
 #    --projects PATH     Canvas ajanının göreceği klasör (vars. ~/projects)   #
 #    --sandbox AD        NemoClaw kabının adı (varsayılan spark)              #
 #    --no-<parça>        --all içinden birini kapat: swap/canvas/a2a/nemoclaw #
@@ -151,7 +151,8 @@ DC(){ $DKR compose --env-file "$ENVF" -f "$CDIR/docker-compose.yml" "$@"; }
 
 while [[ $# -gt 0 ]]; do case "$1" in
   --demo) DEMO=1; TIERS=(haiku sonnet) ;;
-  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1; WITH_CANVAS=1; WITH_A2A=1 ;;
+  --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1
+          WITH_CANVAS=1; WITH_A2A=1; WITH_AGENCY=1 ;;
   --with-fable) WITH_FABLE=1 ;; --with-extras) WITH_EXTRAS=1 ;;
   --with-nemoclaw) WITH_NEMOCLAW=1 ;; --no-nemoclaw) WITH_NEMOCLAW=0 ;;
   --with-swap) WITH_SWAP=1 ;; --no-swap) WITH_SWAP=0 ;;
@@ -185,6 +186,7 @@ if [[ "$MODE" == uninstall ]]; then
   # vault, kurallar ve proje klasörü olduğu gibi kalır — onlar senin yazdığın
   # şeyler, kurulumun ürettiği dosya değil.
   for r in spark-kod spark-test spark-denetci; do rm -f "$HOME/.claude/agents/$r.md"; done
+  rm -f "$HOME/.claude/agents"/ajans-*.md
   rm -rf "$HOME/.claude/skills/sirket-kurallari"
   echo "  roller ve sirket-kurallari skill'i kaldırıldı"
   sudo rm -rf "$AI_ROOT"; sudo rm -f /usr/local/bin/spark /usr/local/bin/wiki
@@ -399,7 +401,7 @@ mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,w
          "$CDIR" "$AI_ROOT/bin"
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
 [[ -f "$SRC_DIR/a2a/server.py" ]] && cp "$SRC_DIR/a2a/server.py" "$CDIR/a2a-server.py"
-[[ -f "$SRC_DIR/roller/ice-aktar.py" ]] && cp "$SRC_DIR/roller/ice-aktar.py" "$CDIR/ice-aktar.py"
+[[ -f "$SRC_DIR/roller/uyarla.py" ]] && cp "$SRC_DIR/roller/uyarla.py" "$CDIR/uyarla.py"
 if [[ ! -f "$ENVF" ]]; then cp "$SRC_DIR/.env.example" "$ENVF"; fi
 sed -i "s|^HF_TOKEN=.*|HF_TOKEN=$HF_TOKEN|; s|^AI_ROOT=.*|AI_ROOT=$AI_ROOT|" "$ENVF"
 grep -q '^VLLM_IMAGE=' "$ENVF" || echo "VLLM_IMAGE=ghcr.io/aeon-7/aeon-vllm-ultimate:latest" >> "$ENVF"
@@ -498,14 +500,37 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   #  katman adını ekler, gövdeye şirket kurallarını bağlar. "ajans-" öneki
   #  kendi rollerimizle karışmasını önler.
   if (( WITH_AGENCY )); then
-    if python3 "$SRC_DIR/roller/ice-aktar.py" --onerilen \
-         --host-dizin "$HOME/.claude/agents" \
-         --canvas-dizin "$CANVAS_AGENTS" \
-         --kurallar "$KURALLAR" >>"$LOGFILE" 2>&1; then
-      AJANS=$(ls -1 "$HOME/.claude/agents"/ajans-*.md 2>/dev/null | wc -l)
-      ok "katalogtan $AJANS uzman rol çekildi (ajans-* önekiyle)"
+    # Kataloğun kendisini kuruyoruz, tek tek dosya çekmiyoruz: resmî kurucusu
+    # (scripts/install.sh) listeleme, etkileşimli seçici ve 16 araç hedefi
+    # getiriyor. Masaüstü uygulamasına gerek yok — onun Claude Code biçimi
+    # "identity", yani aynı dosyayı aynı yere kopyalıyor; üstelik Linux
+    # ikilileri yalnız amd64, Spark aarch64.
+    AADIR="$AI_ROOT/agency-agents"
+    if [[ -d "$AADIR/.git" ]]; then
+      spin "agency-agents güncelleniyor" git -C "$AADIR" pull -q || true
     else
-      warn "katalog rolleri çekilemedi (internet?) — sonra: spark agents"
+      spin "agency-agents kataloğu indiriliyor" git clone -q --depth 1 \
+        https://github.com/msitarzewski/agency-agents "$AADIR" || warn "katalog indirilemedi"
+    fi
+    if [[ -d "$AADIR" ]]; then
+      ok "katalog: $AADIR ($(ls -1 "$AADIR"/*/*.md 2>/dev/null | wc -l) ajan)"
+      SECIM="backend-architect,frontend-developer,software-architect,database-optimizer"
+      SECIM="$SECIM,devops-automator,sre-site-reliability-engineer,incident-response-commander"
+      SECIM="$SECIM,git-workflow-master,technical-writer,minimal-change-engineer"
+      SECIM="$SECIM,codebase-onboarding-engineer,api-platform-engineer,product-manager"
+      SECIM="$SECIM,sprint-prioritizer,meeting-notes-specialist"
+      if (cd "$AADIR" && CLAUDE_CONFIG_DIR="$HOME/.claude" \
+            bash scripts/install.sh --tool claude-code --agent "$SECIM" \
+            --no-interactive) >>"$LOGFILE" 2>&1; then
+        # Resmî kurucu araçtan bağımsız dosya bırakır: model adı yok, kural yok.
+        # Uyarlayıcı ikisini ekler ve Canvas kopyasını üretir.
+        python3 "$SRC_DIR/roller/uyarla.py" --host "$HOME/.claude/agents" \
+          --canvas "$CANVAS_AGENTS" --kurallar "$KURALLAR" >>"$LOGFILE" 2>&1 || true
+        AJANS=$(ls -1 "$HOME/.claude/agents"/ajans-*.md 2>/dev/null | wc -l)
+        ok "$AJANS uzman rol kuruldu ve kurallara bağlandı (ajans-* önekiyle)"
+      else
+        warn "katalog rolleri kurulamadı — sonra: spark agents --onerilen"
+      fi
     fi
   fi
 else

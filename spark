@@ -8,7 +8,7 @@
 #    spark swap                          llama-swap durumu: hangi katman ayakta
 #    spark canvas                        Agent Canvas adresi ve panel anahtarı
 #    spark a2a                           A2A köprüsü: kart ve roller
-#    spark agents [--liste|--onerilen]   katalogdan uzman rol çek
+#    spark agents [--liste|--kurulu|--ekle|--sil|--onerilen]  uzman rolleri yönet
 #    spark logs [servis]                 canlı log
 #    spark pull <sonnet|opus|fable>      model ağırlığı indir (konteynerle)
 #    spark models                        katman → model eşlemesi ve durum
@@ -197,12 +197,34 @@ case "${1:-status}" in
 
   agents)
     shift
-    IA="$AI_ROOT/compose/ice-aktar.py"
-    [[ -f "$IA" ]] || { echo "içe aktarıcı yok: $IA  (bash install.sh --with-agency --resume)"; exit 1; }
-    exec python3 "$IA" "$@" \
-      --host-dizin "$HOME/.claude/agents" \
-      --canvas-dizin "$AI_ROOT/data/canvas/agents" \
-      --kurallar "${OBSIDIAN_VAULT:-$HOME/vault}/kurallar"
+    AADIR="$AI_ROOT/agency-agents"; UY="$AI_ROOT/compose/uyarla.py"
+    HOSTD="$HOME/.claude/agents"; CANVD="$AI_ROOT/data/canvas/agents"
+    KUR="${OBSIDIAN_VAULT:-$HOME/vault}/kurallar"
+    [[ -d "$AADIR" ]] || { echo "katalog yok: $AADIR"; echo "  kur: bash install.sh --with-agency --resume"; exit 1; }
+    # Uyarlama her ekleme sonrası çalışır: model adı + şirket kuralları + Canvas kopyası
+    uyarla(){ python3 "$UY" --host "$HOSTD" --canvas "$CANVD" --kurallar "$KUR"; }
+    case "${1:-}" in
+      --liste|--list)  shift; exec bash "$AADIR/scripts/install.sh" --list "${1:-agents}" --no-interactive ;;
+      --sil|--remove)  shift; exec python3 "$UY" --host "$HOSTD" --canvas "$CANVD" --kurallar "$KUR" --sil "$@" ;;
+      --kurulu)        printf '\n  %skurulu uzman roller%s\n\n' "$B" "$R"
+                       for f in "$HOSTD"/ajans-*.md; do [ -e "$f" ] || { echo "    (yok)"; break; }
+                         printf '    %-46s %s\n' "$(basename "$f" .md)" "$(awk -F": " "/^model:/{print \$2}" "$f")"; done
+                       echo; exit 0 ;;
+      --onerilen)      S="backend-architect,frontend-developer,software-architect,database-optimizer"
+                       S="$S,devops-automator,sre-site-reliability-engineer,incident-response-commander"
+                       S="$S,git-workflow-master,technical-writer,minimal-change-engineer"
+                       S="$S,codebase-onboarding-engineer,api-platform-engineer,product-manager"
+                       S="$S,sprint-prioritizer,meeting-notes-specialist"
+                       (cd "$AADIR" && CLAUDE_CONFIG_DIR="$HOME/.claude" bash scripts/install.sh \
+                          --tool claude-code --agent "$S" --no-interactive) && uyarla; exit $? ;;
+      --ekle|--add)    shift; [ $# -gt 0 ] || { echo "kullanım: spark agents --ekle <slug>[,<slug>...]"; exit 1; }
+                       (cd "$AADIR" && CLAUDE_CONFIG_DIR="$HOME/.claude" bash scripts/install.sh \
+                          --tool claude-code --agent "$*" --no-interactive) && uyarla; exit $? ;;
+      "")              # etkileşimli seçici, ardından uyarlama
+                       (cd "$AADIR" && CLAUDE_CONFIG_DIR="$HOME/.claude" bash scripts/install.sh \
+                          --tool claude-code) && uyarla; exit $? ;;
+      *)               (cd "$AADIR" && CLAUDE_CONFIG_DIR="$HOME/.claude" bash scripts/install.sh "$@") && uyarla; exit $? ;;
+    esac
     ;;
 
   status)
