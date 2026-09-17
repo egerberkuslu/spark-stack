@@ -799,10 +799,36 @@ sure_metni(){ local s=${1:-0}
   if (( s >= 3600 )); then printf '%dsa %ddk' $((s/3600)) $((s%3600/60))
   elif (( s >= 60 )); then printf '%ddk %ds' $((s/60)) $((s%60))
   else printf '%ds' "$s"; fi; }
-hf_toplam_bayt(){ # <repo> → bayt; API cevap vermezse 0
+declare -A HF_BOYUT=()
+hf_toplam_bayt(){ # <repo> → bayt; API cevap vermezse 0. Sonuç önbelleğe alınır.
+  local repo=$1 v
+  [[ -n "${HF_BOYUT[$repo]:-}" ]] && { echo "${HF_BOYUT[$repo]}"; return 0; }
   local -a auth=(); [[ -n "${HF_TOKEN:-}" ]] && auth=(-H "Authorization: Bearer $HF_TOKEN")
-  curl -sf --max-time 30 "${auth[@]}" "https://huggingface.co/api/models/$1/tree/main?recursive=true" 2>/dev/null \
-    | jq -r '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add // 0' 2>/dev/null || echo 0; }
+  v="$(curl -sf --max-time 30 "${auth[@]}" "https://huggingface.co/api/models/$repo/tree/main?recursive=true" 2>/dev/null \
+    | jq -r '[.[] | select(.type=="file") | (.lfs.size // .size // 0)] | add // 0' 2>/dev/null)"
+  [[ "$v" =~ ^[0-9]+$ ]] || v=0
+  HF_BOYUT[$repo]=$v; echo "$v"; }
+
+# Bir katman gerçekten tam indi mi? Tek başına config.json'a bakmak yanlıştı:
+# o küçük dosya ilk inenlerden biri, indirme ortasında kesilince katman "zaten
+# var" sanılıyor ve gigabaytlarca ağırlık eksik kalıyordu. Üç işarete bakıyoruz:
+#   1) config.json duruyor mu
+#   2) yarım kalan parça var mı (hf tamamlanmamış dosyayı .incomplete tutar)
+#   3) yereldeki toplam boyut depodaki toplamın en az %97'si mi
+# Üçüncüsü API'ye bağlı; API susarsa ilk ikisiyle yetiniyoruz.
+model_tam_mi(){ # <klasör> <repo> → 0 tam, 1 eksik
+  local d=$1 repo=$2 T b
+  [[ -f "$d/config.json" ]] || return 1
+  find "$d/.cache/huggingface/download" -name '*.incomplete' -type f -print -quit 2>/dev/null \
+    | grep -q . && return 1
+  # Ağırlık dosyası hiç yoksa kesin eksik: config.json ilk inenlerden biri ve
+  # API susmuş olsa bile bu işaret o durumu yakalıyor.
+  find "$d" -maxdepth 2 \( -name '*.safetensors' -o -name '*.bin' -o -name '*.gguf' \
+    -o -name '*.pt' -o -name '*.pth' \) -type f -print -quit 2>/dev/null | grep -q . || return 1
+  T="$(hf_toplam_bayt "$repo")"
+  (( T > 0 )) || return 0
+  b="$(du -sb "$d" 2>/dev/null | cut -f1)"; b="${b:-0}"
+  (( b * 100 >= T * 97 )); }
 klasor_izle(){ # <etiket> <klasör> <toplam bayt>  (arka planda çalışır, öndeki iş bitince öldürülür)
   set +e; trap - ERR
   local l=$1 d=$2 T=${3:-0} t0 b0 t1 b1 dt inst rate=0 pct eta
@@ -852,21 +878,31 @@ hf_indir(){ # <etiket> <repo> <hedef klasör>  → ilerleme satırıyla indirir
 pull_model(){ # pull_model <katman>
   local t=$1 repo_var="${1^^}_REPO" repo
   repo="${!repo_var}"
-  if [[ -f "$MODELS/$t/config.json" ]]; then
+  if model_tam_mi "$MODELS/$t" "$repo"; then
     is "$t: zaten indirilmiş"
-    ok "$t = $(tier_repo "$t") ($(du -sh "$MODELS/$t"|cut -f1))"; return 0; fi
-  is "$t ← $repo  ($(tier_size "$t"))"
+    ok "$t = $(tier_repo "$t") ($(du -sh "$MODELS/$t"|cut -f1), bütünlük doğrulandı)"; return 0; fi
+  if [[ -f "$MODELS/$t/config.json" ]]; then
+    is "$t: yarım kalmış ($(du -sh "$MODELS/$t" 2>/dev/null|cut -f1) indi), kaldığı yerden sürüyor"
+  else
+    is "$t ← $repo  ($(tier_size "$t"))"
+  fi
   hf_indir "$t" "$repo" "$MODELS/$t" || true
-  [[ -f "$MODELS/$t/config.json" ]] || die "$t indirilemedi ($repo)"
+  model_tam_mi "$MODELS/$t" "$repo" \
+    || die "$t eksik indi ($repo); tekrar denemek için: bash install.sh --resume"
   ok "$t indi: $INDIRME_OZETI"
 
   # Spekülatif decode taslak modeli varsa (ör. sonnet için DSpark) onu da çek
   local draft_var="${1^^}_DRAFT"
   local draft="${!draft_var:-}"
-  if [[ -n "$draft" && ! -f "$MODELS/$t-draft/config.json" ]]; then
-    is "$t taslak modeli ← $draft  (~1 GB)"
+  if [[ -n "$draft" ]] && ! model_tam_mi "$MODELS/$t-draft" "$draft"; then
+    if [[ -f "$MODELS/$t-draft/config.json" ]]; then
+      is "$t taslak modeli yarım kalmış, kaldığı yerden sürüyor"
+    else
+      is "$t taslak modeli ← $draft  (~1 GB)"
+    fi
     hf_indir "$t-taslak" "$draft" "$MODELS/$t-draft" || true
-    [[ -f "$MODELS/$t-draft/config.json" ]] || die "$t taslak modeli indirilemedi ($draft)"
+    model_tam_mi "$MODELS/$t-draft" "$draft" \
+      || die "$t taslak modeli eksik indi ($draft); tekrar: bash install.sh --resume"
     ok "$t taslak indi: $INDIRME_OZETI, spekülatif decode aktif"
   fi
 }

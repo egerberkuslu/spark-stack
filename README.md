@@ -183,13 +183,23 @@ eder. Bir sonraki koşu da başlarken kalan `sk-indir-*` konteynerlerini arayıp
 makine kapandıysa ya da eski bir sürümle kesildiysen elle temizlemen gerekmez.
 
 **Yarım inen dosyalar silinmez.** HuggingFace indirmesi `.cache/huggingface/download/` altındaki
-kayıtlarla kaldığı yerden devam eder, baştan inmez. Tamamlanmış bir katman hiç dokunulmadan
-atlanır:
+kayıtlarla kaldığı yerden devam eder, baştan inmez.
+
+**Bir katmanın tam inip inmediği gerçekten ölçülür.** Kurulum üç işarete birden bakar: `config.json`
+duruyor mu, yarım kalan parça (`.incomplete`) var mı, ağırlık dosyaları yerinde ve toplam boyut
+depodaki boyutun en az %97'si mi. Üç durum, üç ayrı mesaj:
 
 ```
   ▸ [1/5] haiku: zaten indirilmiş
-    ✓ haiku = unsloth/Qwen3.6-35B-A3B-NVFP4 (26G)
+    ✓ haiku = unsloth/Qwen3.6-35B-A3B-NVFP4 (26G, bütünlük doğrulandı)
+  ▸ [2/5] sonnet: yarım kalmış (4,1G indi), kaldığı yerden sürüyor
+  ▸ [3/5] opus ← unsloth/Qwen3.8-27B-NVFP4  (~20 GB)
 ```
+
+Bu ölçüm önemli, çünkü `config.json` ilk inen küçük dosyalardan biri. Yalnız ona bakan bir kontrol,
+indirmenin ortasında kesilen bir katmanı "zaten var" sanıp gigabaytlarca ağırlığı eksik bırakırdı.
+İndirme bittikten sonra da aynı ölçüm tekrarlanır; eksikse kurulum hata verip durur, sessizce
+devam etmez.
 
 **`--resume` adım atlamaz, hepsini yeniden koşar.** Bu bilerek: her adım tekrar çalıştırılabilir
 yazıldı (kurulu paket atlanır, var olan kural dosyasının üzerine yazılmaz, inen ağırlık tekrar
