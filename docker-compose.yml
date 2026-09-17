@@ -94,10 +94,13 @@ services:
       # Bilgi tabanı SALT OKUNUR: ajan notlara bakabilsin ama silemesin.
       # Vault'a yazma, insanın onayladığı "wiki" akışında kalır.
       - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}:/vault:ro
-      # Kurallar ayrıca kullanıcı skill'i olarak bağlanır: tetikleyicisiz .md
-      # dosyaları sistem istemine HER konuşmada tam metin giriyor. Yani kuralı
-      # okumak ajanın insafına kalmıyor. Bütün vault değil, yalnız kurallar.
-      - ${OBSIDIAN_VAULT:-/srv/ai/data/vault}/kurallar:/home/openhands/.agents/skills:ro
+      # Ortak skill dizini: kurallar (tetikleyicisiz .md, her konuşmada tam
+      # metin), claude-obsidian'ın 15 skill'i ve host'taki skill'ler burada
+      # birleştirilir. install.sh derler; amaç makinede ne varsa kapta da
+      # olması — nereden çalışırsan çalış aynı sistem.
+      - ${AI_ROOT:-/srv/ai}/data/canvas/agents-skills:/home/openhands/.agents/skills:ro
+      # claude-obsidian ürün kökü: skill'ler betikleri buradan çağırır
+      - ${AI_ROOT:-/srv/ai}/claude-obsidian:/opt/claude-obsidian:ro
 
   # ── A2A köprüsü · rolleri protokolle dışarı aç ────────────────────────────
   #  Roller (spark-kod/test/denetci) Agent2Agent protokolüyle adreslenebilir

@@ -402,6 +402,7 @@ mkdir -p "$MODELS/hf" "$DATA"/{cache-haiku,cache-sonnet,cache-opus,cache-fable,w
 cp "$SRC_DIR/docker-compose.yml" "$CDIR/"
 [[ -f "$SRC_DIR/a2a/server.py" ]] && cp "$SRC_DIR/a2a/server.py" "$CDIR/a2a-server.py"
 [[ -f "$SRC_DIR/roller/uyarla.py" ]] && cp "$SRC_DIR/roller/uyarla.py" "$CDIR/uyarla.py"
+[[ -f "$SRC_DIR/roller/skill-birlestir.sh" ]] && cp "$SRC_DIR/roller/skill-birlestir.sh" "$CDIR/skill-birlestir.sh"
 if [[ ! -f "$ENVF" ]]; then cp "$SRC_DIR/.env.example" "$ENVF"; fi
 sed -i "s|^HF_TOKEN=.*|HF_TOKEN=$HF_TOKEN|; s|^AI_ROOT=.*|AI_ROOT=$AI_ROOT|" "$ENVF"
 grep -q '^VLLM_IMAGE=' "$ENVF" || echo "VLLM_IMAGE=ghcr.io/aeon-7/aeon-vllm-ultimate:latest" >> "$ENVF"
@@ -481,6 +482,12 @@ if [[ -d "$SRC_DIR/roller" ]]; then
   mkdir -p "$CSK"
   sed -e "s|__KURALLAR__|/vault/kurallar|g" -e "s|__VAULT__|/vault|g" "$SRC_DIR/roller/SKILL.md" > "$CSK/SKILL.md"
   ok "kural skill'i Canvas tarafına da yazıldı"
+
+  # Ortak skill dizini: Canvas kabı bunu ~/.agents/skills olarak görür.
+  # Burada ilk kez derleniyor (kurallar + host skill'leri). claude-obsidian
+  # 10. adımda indiği için orada bir kez daha derlenip 15 skill'i de girecek.
+  bash "$SRC_DIR/roller/skill-birlestir.sh" "$DATA/canvas/agents-skills" \
+    "$KURALLAR" "" "$HOME/.claude/skills" >>"$LOGFILE" 2>&1 || true
 
   # Proje sözleşmesi: AGENTS.md'yi hem Claude Code hem Agent Canvas kendiliğinden
   # okur ve tam metin sistem istemine koyar (SDK onu tetikleyicisiz bir skill'e
@@ -955,6 +962,18 @@ DESKEOF
       ok "vault hazır: $VAULT"
     fi
 
+    # Ortak skill dizinini yeniden derle: claude-obsidian'ın 15 skill'i artık
+    # burada, PRODUCT_ROOT kaptaki /opt/claude-obsidian'a sabitleniyor. Böylece
+    # Canvas'taki ajan da wiki-query/wiki-retrieve kullanabiliyor — yani vault
+    # araması iki tarafta da aynı hattan geçiyor.
+    if bash "$SRC_DIR/roller/skill-birlestir.sh" "$DATA/canvas/agents-skills" \
+         "$KURALLAR" "$WIKI_DIR" "$HOME/.claude/skills" >>"$LOGFILE" 2>&1; then
+      SKS=$(find "$DATA/canvas/agents-skills" -maxdepth 1 -mindepth 1 | wc -l)
+      ok "ortak skill dizini derlendi: $SKS girdi (Canvas da aynı skill'leri görüyor)"
+    else
+      warn "ortak skill dizini derlenemedi"
+    fi
+
     # 'wiki' komutu: vault'a girip Claude Code'u eklentiyle açar
     sudo tee /usr/local/bin/wiki >/dev/null <<WIKIEOF
 #!/usr/bin/env bash
@@ -1097,6 +1116,13 @@ if (( WITH_A2A )); then
   [[ -n "$ASK" ]] && v_ok "A2A köprüsü yayında: $ASK" || v_no "A2A kartı okunamadı — spark logs a2a"
 fi
 
+if (( WITH_CANVAS )); then
+  SKD="$DATA/canvas/agents-skills"
+  SKN=$(find "$SKD" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
+  WQ=$([[ -f "$SKD/wiki-query/SKILL.md" ]] && echo var || echo yok)
+  if (( SKN )); then v_ok "ortak skill dizini: $SKN girdi · wiki-query $WQ"
+  else v_no "ortak skill dizini boş — Canvas host'takı skill'leri görmez"; fi
+fi
 (( WITH_AGENCY )) && { ASAY=$(ls -1 "$HOME/.claude/agents"/ajans-*.md 2>/dev/null | wc -l)
   (( ASAY )) && v_ok "katalog rolleri: $ASAY adet" || v_no "katalog rolleri kurulmadı"; }
 (( WITH_NEMOCLAW )) && { have nemoclaw && v_ok "NemoClaw CLI hazır" || v_no "nemoclaw komutu yok"; }

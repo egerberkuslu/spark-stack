@@ -202,6 +202,39 @@ elle yapılan bir iş değil.
 | NemoClaw | `NEMOCLAW_ENDPOINT_URL` → `:4000/v1` | **hayır** | **hayır** — aşağıya bak |
 | llama-swap | katmanlara servis adıyla (`haiku:8000`) | ilgisiz | hayır |
 
+### Nereden çalışırsan çalış aynı sistem
+
+Amaç şu: makinedeki Claude Code'da mı yazıyorsun, Canvas panelinde mi — aynı roller, aynı
+kurallar, aynı skill'ler, aynı bilgi tabanı. Bugün duran tablo:
+
+| | makinede Claude Code | Agent Canvas |
+|---|---|---|
+| `spark-*` roller | `~/.claude/agents` | `~/.openhands/agents` |
+| `ajans-*` roller | aynı | aynı |
+| Kurallar | skill + rol gövdesi | her-zaman-aktif skill + `AGENTS.md` + rol |
+| Bilgi tabanı okuma | `~/vault` | `/vault` salt okunur |
+| claude-obsidian'ın 15 skill'i | eklenti olarak | **ortak skill dizininde** |
+| Host skill'leri (superpowers vb.) | `~/.claude/skills` | **ortak skill dizininde** |
+| MCP sunucuları | yedisi de | **yok** — aşağıya bak |
+
+Skill birliğini `roller/skill-birlestir.sh` kuruyor: kurallar, claude-obsidian skill'leri ve
+`~/.claude/skills` altındaki her şey tek dizinde birleşiyor, compose onu kaba
+`~/.agents/skills` olarak bağlıyor. Biçim iki tarafta da aynı (`SKILL.md` + frontmatter), o
+yüzden dönüştürme gerekmiyor. claude-obsidian skill'lerindeki `PRODUCT_ROOT` yer tutucusu
+kaptaki `/opt/claude-obsidian` yoluna sabitleniyor, böylece `wiki-query` ve `wiki-retrieve`
+Canvas'ta da çalışıyor — yani vault araması artık iki tarafta da aynı hattan geçiyor.
+
+Dizin her kurulumda sıfırdan derleniyor; makinede sildiğin bir skill kapta kalmıyor.
+
+**MCP'de eşitlik sağlanamıyor ve sebebi yapısal.** Canvas MCP'yi destekliyor (`stdio` ve
+`url` biçimleri var), ama bizim yedi sunucumuz `docker run` ile çalışan stdio sunucuları ve
+kabın içinde docker yok — olmasını da istemiyoruz, yalıtımı zayıflatırdı. Kaptaki ajanın
+dosya, kabuk ve arama araçları zaten yerleşik, yani `filesystem` ve `git` MCP'leri orada
+gereksiz. Gerçekten eksik kalan `fetch`, `context7` ve `playwright` gibi dışarıya çıkanlar;
+onlara ihtiyaç duyan işi makinedeki Claude Code'a bırakmak doğru olur. Bunları kapta da
+istersen yol belli: her birini HTTP/SSE konuşan bir compose servisi olarak çalıştırıp Canvas'a
+`url` ile tanıtmak gerekir.
+
 **Ajanlar vault'ta nasıl araştırıyor.** Erişim tek başına yetmiyordu: kaplara vault bağlıydı
 ama hiçbir şey ajana oraya bakmasını söylemiyordu. Artık kural metni, rol gövdeleri ve
 `AGENTS.md` vault'un yapısını anlatıyor — `wiki/index.md` konu haritası, `wiki/log.md` kararlar,
