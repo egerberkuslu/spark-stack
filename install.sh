@@ -345,7 +345,19 @@ BANNER
 printf '\n'
 sudo -v || die "sudo gerekiyor"
 ( while true; do sudo -n true; sleep 50; kill -0 "$$" 2>/dev/null || exit; done ) 2>/dev/null &
-sudo mkdir -p "$AI_ROOT" "$DATA" "$CDIR"; sudo chown -R "$USER:$USER" "$AI_ROOT"
+sudo mkdir -p "$AI_ROOT" "$DATA" "$CDIR"
+# Sahipliği kullanıcıya veriyoruz ama veritabanı dizinine DOKUNMUYORUZ.
+# Postgres o dosyaları kendi kullanıcısıyla (kapta uid 70) açıyor; biz sahipliği
+# çevirirsek ÇALIŞAN veritabanı kendi dosyalarını okuyamaz hale geliyor ve
+# "PostgresError 42501: could not open file ... Permission denied" veriyor.
+# Bu her --resume'da tekrarlanan sessiz bir bozma idi.
+sudo find "$AI_ROOT" -path "$DATA/litellm-db" -prune -o -exec chown "$USER:$USER" {} +
+# Daha önceki bir koşu bozduysa geri al: kaptaki postgres uid 70.
+if [[ -d "$DATA/litellm-db" ]] && [[ "$(stat -c %u "$DATA/litellm-db" 2>/dev/null)" != 70 ]]; then
+  sudo chown -R 70:70 "$DATA/litellm-db" 2>/dev/null \
+    && warn "veritabanı dosyalarının sahipliği onarıldı (postgres uid 70)"
+  DB_ONARILDI=1
+fi
 touch "$LOGFILE"; [[ $RESUME == 1 ]] || : >"$STATE"
 _w "════ spark-stack $VERSION · $(date) ════"
 
@@ -1281,13 +1293,30 @@ send
 #  insan: bütün katmanlar (fable dahil). canvas/nemoclaw/a2a: fable YOK (açılınca
 #  günlük katmanları düşürür) ve günlük token bütçesi var (döngüye giren ajan
 #  bütçesi bitince durur, 429). Anahtarlar veritabanında kalıcı; kopyaları .env'de.
+# Anahtar üretimi HİÇBİR ZAMAN sıfır dışında dönmemeli: çağrı yeri
+# KEY_X="$(anahtar_uret ...)" biçiminde ve set -e ile pipefail, başarısız bir
+# curl'ü ölümcül hataya çevirir. Oysa altta "üretilemedi, ana anahtarla devam"
+# diye çalışan bir yedek yol var; ölürsek oraya hiç varamıyoruz.
+# Kapı ayağa kalkmış olsa da veritabanı göçü bitmemiş olabilir, o yüzden
+# birkaç kez deniyoruz ve son cevabı loga yazıyoruz.
 anahtar_uret(){ # <alias> <modeller json> [bütçe]
-  local body="{\"key_alias\":\"$1\",\"models\":$2,\"metadata\":{\"spark\":\"$VERSION\"}"
+  local body cevap kod deneme
+  body="{\"key_alias\":\"$1\",\"models\":$2,\"metadata\":{\"spark\":\"$VERSION\"}"
   [[ -n "${3:-}" ]] && body+=",\"max_budget\":$3,\"budget_duration\":\"1d\",\"rpm_limit\":120"
   body+="}"
-  curl -sf --max-time 20 -X POST http://127.0.0.1:4000/key/generate \
-    -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" -H 'Content-Type: application/json' \
-    -d "$body" | jq -r '.key // empty'
+  for deneme in 1 2 3 4 5; do
+    cevap="$(curl -s --max-time 20 -w '\n%{http_code}' -X POST http://127.0.0.1:4000/key/generate \
+      -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" -H 'Content-Type: application/json' \
+      -d "$body" 2>/dev/null || true)"
+    kod="$(tail -1 <<<"$cevap")"; cevap="$(sed '$d' <<<"$cevap")"
+    if [[ "$kod" == 2?? ]]; then
+      jq -r '.key // empty' <<<"$cevap" 2>/dev/null || true
+      return 0
+    fi
+    _w "anahtar '$1' denemesi $deneme: HTTP ${kod:-yok} · ${cevap:0:200}"
+    sleep 5
+  done
+  return 0
 }
 anahtar_gecerli(){ [[ -n "${1:-}" ]] && curl -sf --max-time 10 "http://127.0.0.1:4000/key/info?key=$1" \
     -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" >/dev/null 2>&1; }
@@ -1317,6 +1346,12 @@ anahtarlari_uret(){
 }
 sbegin 6 $(( 2 + WITH_CANVAS + WITH_A2A + WITH_EXTRAS ))
 is "servisler başlatılıyor ve kapı bekleniyor"
+# Sahiplik onarıldıysa çalışan veritabanının açık dosya tanıtıcıları hâlâ eski
+# durumda; yeniden başlatmadan düzelmiyor.
+if [[ "${DB_ONARILDI:-0}" == 1 ]]; then
+  spin "kapı veritabanı yeniden başlatılıyor (sahiplik onarımı sonrası)" \
+    DC --profile daily restart litellm-db || true
+fi
 if (( WITH_SWAP )); then
   # Konteynerler oluşturulur ama başlatılmaz; açma işini llama-swap üstlenir.
   CREATE_PROFILES=(--profile demo --profile daily)
