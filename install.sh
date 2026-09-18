@@ -1014,7 +1014,10 @@ anlik_goruntu(){ # <hf kök> <repo> → anlık görüntü dizini (host yolu)
     [[ -d "$p" && "$p" != *-fp8hybrid/ ]] || continue
     [[ -z "$yeni" || "$p" -nt "$yeni" ]] && yeni="$p"
   done
-  [[ -n "$yeni" ]] && echo "${yeni%/}"; }
+  # Bulamayınca boş dönüyoruz ama çıkış kodu 0 olmalı: çağrı yeri
+  # snap="$(anlik_goruntu ...)" biçiminde ve set -e sıfır olmayan kodu hata sayar.
+  [[ -n "$yeni" ]] && echo "${yeni%/}"
+  return 0; }
 
 # Klasörde başka bir depo duruyorsa temizle: .env'de model değiştirdiğinde iki
 # modelin dosyaları aynı klasörde karışır ve vLLM açılmaz. İşaret dosyası yoksa
