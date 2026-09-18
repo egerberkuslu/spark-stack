@@ -23,7 +23,7 @@
 #    --with-agency       agency-agents kataloğu + 15 uzman rol (--all dahil)  #
 #    --projects PATH     Canvas ajanının göreceği klasör (vars. ~/projects)   #
 #    --sandbox AD        NemoClaw kabının adı (varsayılan spark)              #
-#    --no-<parça>        --all içinden birini kapat: swap/canvas/a2a/nemoclaw #
+#    --no-<parça>        --all içinden çıkar: fable/swap/canvas/a2a/wiki      #
 #    --vault PATH        vault yolu (varsayılan ~/vault)                      #
 #    --resume            yarım kalan kurulumu sürdür                          #
 #    --status            servis durumu     --uninstall   tümünü kaldır        #
@@ -253,7 +253,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --demo) DEMO=1; TIERS=(haiku sonnet) ;;
   --all)  WITH_FABLE=1; WITH_EXTRAS=1; WITH_WIKI=1; WITH_NEMOCLAW=1; WITH_SWAP=1
           WITH_CANVAS=1; WITH_A2A=1; WITH_AGENCY=1 ;;
-  --with-fable) WITH_FABLE=1 ;; --with-extras) WITH_EXTRAS=1 ;;
+  --with-fable) WITH_FABLE=1 ;; --no-fable) WITH_FABLE=0 ;;
+  --with-extras) WITH_EXTRAS=1 ;; --no-extras) WITH_EXTRAS=0 ;;
+  --no-wiki) WITH_WIKI=0 ;;
   --with-nemoclaw) WITH_NEMOCLAW=1 ;; --no-nemoclaw) WITH_NEMOCLAW=0 ;;
   --with-swap) WITH_SWAP=1 ;; --no-swap) WITH_SWAP=0 ;;
   --with-canvas) WITH_CANVAS=1 ;; --no-canvas) WITH_CANVAS=0 ;;

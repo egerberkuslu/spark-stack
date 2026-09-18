@@ -166,7 +166,10 @@ bash install.sh --all --token hf_xxx
 # Sıfırdan, bilgi tabanı graphify olsun
 bash install.sh --all --bilgi graphify --token hf_xxx
 
-# Mevcut kuruluma dördüncü katmanı (fable) ekle
+# Her şey, ama fable olmasın (133 GB indirmeden kurulum)
+bash install.sh --all --no-fable --token hf_xxx
+
+# Mevcut kuruluma dördüncü katmanı (fable) sonradan ekle
 bash install.sh --with-fable --resume
 
 # Mevcut kuruluma hem fable hem graphify ekle
@@ -204,7 +207,7 @@ her katman için yüzde, hız ve kalan süre tek satırda görünür.
 | `--projects PATH` | Canvas ajanının göreceği klasör (varsayılan `~/projects`) |
 | `--vault PATH` | Vault yolu (varsayılan `~/vault`) |
 | `--sandbox AD` | NemoClaw kabının adı (varsayılan `spark`) |
-| `--no-swap` · `--no-canvas` · `--no-a2a` · `--no-nemoclaw` · `--no-agency` | `--all` içinden tek tek çıkar |
+| `--no-fable` · `--no-swap` · `--no-canvas` · `--no-a2a` · `--no-nemoclaw` · `--no-agency` · `--no-wiki` · `--no-extras` | `--all` içinden tek tek çıkar; sıra önemli, `--all` önce gelir |
 | `--resume` | Yarım kalan kurulumu sürdür |
 | `--status` / `--uninstall` | Durum / kaldırma |
 
