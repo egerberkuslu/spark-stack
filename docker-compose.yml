@@ -82,6 +82,12 @@ services:
       # Veritabanı: ajan başına anahtar, bütçe ve harcama defteri burada durur
       DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:-litellm}@litellm-db:5432/litellm
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-sk-salt-degistir}
+      # Ana anahtar yalnız litellm.yaml'da durunca anahtar yönetimi uçları ve
+      # yönetim arayüzü çalışmıyor; belgelenen kurulum bunu ortam değişkeni
+      # olarak da ister. Arayüz girişi de bu değeri parola olarak kullanıyor.
+      LITELLM_MASTER_KEY: ${LITELLM_KEY:-sk-spark}
+      UI_USERNAME: ${LITELLM_UI_USER:-admin}
+      UI_PASSWORD: ${LITELLM_KEY:-sk-spark}
     depends_on:
       litellm-db: {condition: service_healthy}
     volumes:

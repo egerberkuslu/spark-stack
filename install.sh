@@ -1313,11 +1313,15 @@ anahtar_uret(){ # <alias> <modeller json> [bütçe]
       jq -r '.key // empty' <<<"$cevap" 2>/dev/null || true
       return 0
     fi
-    _w "anahtar '$1' denemesi $deneme: HTTP ${kod:-yok} · ${cevap:0:200}"
+    # Son hatayı ekranda da gösterebilmek için tutuyoruz: kullanıcı logu
+    # açmadan neyin ters gittiğini görsün.
+    ANAHTAR_HATA="HTTP ${kod:-cevap yok} · $(tr -d '\n' <<<"${cevap:0:160}")"
+    _w "anahtar '$1' denemesi $deneme: $ANAHTAR_HATA"
     sleep 5
   done
   return 0
 }
+ANAHTAR_HATA=""
 anahtar_gecerli(){ [[ -n "${1:-}" ]] && curl -sf --max-time 10 "http://127.0.0.1:4000/key/info?key=$1" \
     -H "Authorization: Bearer ${LITELLM_KEY:-sk-spark}" >/dev/null 2>&1; }
 anahtarlari_uret(){
@@ -1332,7 +1336,8 @@ anahtarlari_uret(){
   KEY_NEMOCLAW="$(anahtar_uret nemoclaw "$OTO" "$BUTCE")"
   KEY_A2A="$(anahtar_uret a2a "$OTO" "$BUTCE")"
   if [[ -z "$KEY_INSAN" || -z "$KEY_CANVAS" || -z "$KEY_NEMOCLAW" || -z "$KEY_A2A" ]]; then
-    warn "ajan anahtarları üretilemedi: kapı veritabanı ayakta mı? (spark logs litellm-db)"
+    warn "ajan anahtarları üretilemedi: ${ANAHTAR_HATA:-sebep loga yazıldı}"
+    log "   ayrıntı: grep anahtar $LOGFILE"
     log "   herkes ana anahtarla devam ediyor; bütçe ve fable yasağı DEVRE DIŞI"
     KEY_INSAN="${LITELLM_KEY:-sk-spark}"; KEY_CANVAS="$KEY_INSAN"; KEY_NEMOCLAW="$KEY_INSAN"; KEY_A2A="$KEY_INSAN"
     return 0
@@ -1426,7 +1431,13 @@ JSON
       log "   Settings → LLM: litellm_proxy/$FALLBACK_MAIN · http://litellm:4000 · ${KEY_CANVAS:-${LITELLM_KEY:-sk-spark}}"
     fi
   else
-    warn "Agent Canvas açılmadı: spark logs canvas"
+    # Sebebi kullanıcının loga gitmesine gerek kalmadan ekranda söyleyelim:
+    # bu konteyner en çok dosya izni ve port çakışmasında düşüyor.
+    warn "Agent Canvas açılmadı"
+    dk logs --tail 8 sk-canvas 2>&1 | while IFS= read -r satir; do
+      [[ -n "$satir" ]] && log "   ${satir:0:150}"
+    done
+    log "   tamamı: spark logs canvas"
   fi
 fi
 if (( WITH_A2A )); then
@@ -1440,7 +1451,26 @@ if (( WITH_A2A )); then
     warn "A2A köprüsü açılmadı: spark logs a2a"
   fi
 fi
-((WITH_EXTRAS)) && { is "ekstralar (Open WebUI, Qdrant)"; DC --profile extras up -d && ok "Open WebUI: http://localhost:3000" || warn "ekstralar açılmadı"; }
+if (( WITH_EXTRAS )); then
+  is "ekstralar (Open WebUI, Qdrant)"
+  # "up -d" yalnız konteynerin BAŞLADIĞINI söyler, sunucunun dinlediğini değil.
+  # Open WebUI ilk açılışta yarım dakikadan fazla sürebiliyor; adresi vermeden
+  # önce gerçekten cevap verdiğini görüyoruz, yoksa "açıldı" yazıp açılmıyordu.
+  if DC --profile extras up -d >>"$LOGFILE" 2>&1; then
+    if wait_http "http://127.0.0.1:3000/health" 180 "Open WebUI" \
+       || wait_http "http://127.0.0.1:3000/" 60 "Open WebUI"; then
+      ok "Open WebUI: http://localhost:3000"
+    else
+      warn "Open WebUI konteyneri çalışıyor ama henüz cevap vermiyor"
+      log "   ilk açılış uzun sürebilir; birkaç dakika sonra tekrar dene"
+      log "   takıldıysa: spark logs webui"
+    fi
+    dk ps -q --filter name=sk-qdrant 2>/dev/null | grep -q . \
+      && ok "Qdrant: http://localhost:6333" || true
+  else
+    warn "ekstralar açılmadı: spark logs webui"
+  fi
+fi
 send
 
 # ── 7 CLAUDE CODE ───────────────────────────────────────────────────────────
