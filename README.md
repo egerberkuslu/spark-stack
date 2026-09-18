@@ -18,6 +18,37 @@ anahtarsız kurulum olmuyor. Ücretsiz almak bir dakika: [huggingface.co](https:
 
 1 Gbit hatta yaklaşık 50-70 dakika. Adım adım anlatım: **[SETUP.md](SETUP.md)**
 
+### Hızlı başvuru
+
+Pratikte en çok yazılan komutlar:
+
+```bash
+# Kurulum
+bash install.sh --all --token hf_xxx                  # her şey (~206 GB)
+bash install.sh --all --no-fable --token hf_xxx       # fable hariç (~73 GB)
+bash install.sh --all --bilgi graphify --token hf_xxx # bilgi tabanı graphify olsun
+bash install.sh --demo --token hf_xxx                 # yalnız haiku + sonnet
+
+# Kesildi ya da parça eklemek istiyorsun
+git pull && bash install.sh --resume                  # kaldığı yerden (token gerekmez)
+bash install.sh --with-fable --resume                 # fable'ı sonradan ekle
+bash install.sh --all --no-fable --resume             # fable dışında her şeyi tamamla
+
+# Günlük
+spark status          # ne çalışıyor, bellek, disk
+spark models          # katman → model eşlemesi ve durum
+spark logs haiku      # bir katmanın kaydı
+spark down            # hepsini kapat
+spark up daily        # üç günlük katmanı aç
+```
+
+> Yeni bir bayrak tanınmıyorsa (`bilinmeyen: --no-fable` gibi) makinedeki kopya eskidir:
+> `cd ~/spark-stack && git pull`. `bash install.sh --help` ile o kopyanın desteklediği
+> bayrakları görürsün.
+>
+> `docker çalışmıyor` diyorsa docker grubuna yeni eklenmişsindir ve o oturumda henüz
+> geçerli değildir: yeni bir terminal aç ya da `newgrp docker`. `sudo` gerekmez.
+
 Bunu tek kişilik asistan olarak değil, şirketin işlerini yürüten ajan altyapısı olarak
 kuracaksan: **[docs/MIMARI.md](docs/MIMARI.md)**: ajan rolleri, ajan başına anahtar ve
 bütçe, yalıtım seviyeleri, tek makinenin eşzamanlılık tavanı.
