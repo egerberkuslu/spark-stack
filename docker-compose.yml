@@ -16,6 +16,14 @@
 
 x-vllm: &vllm
   image: ${VLLM_IMAGE}
+  # Giriş noktasını biz sıfırlıyoruz, imajın tercihine bırakmıyoruz. Sebebi
+  # somut: aeon-vllm-ultimate'ın ENTRYPOINT'i ["/bin/bash"] ve -c yok, o yüzden
+  # "vllm serve ..." komutu "bash vllm serve ..." olarak koşuyor; bash da
+  # /usr/local/bin/vllm'i (bir Python betiği) kabuk betiği sanıp satır satır
+  # okuyor ve "import: command not found" ile düşüyordu. Boş entrypoint ile
+  # komut doğrudan exec ediliyor, çekirdek shebang'i okuyor. Resmî vLLM
+  # imajında zaten entrypoint yok, yani bu ayar iki imajda da doğru çalışır.
+  entrypoint: []
   restart: unless-stopped
   ipc: host
   ulimits: { memlock: -1, stack: 67108864 }
